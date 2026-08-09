@@ -31,8 +31,15 @@ call time (T10).
 
 ## Release environment
 
-- A `release` Environment with a required reviewer must exist: the GitHub Environment approval
-  gates publication (T3). `environment: release` is a fixed convention, never an input.
+- A `release` Environment must exist: the GitHub Environment approval gates publication (T3).
+  `environment: release` is a fixed convention, never an input.
+- Current state (2026-08, initial setup): the Environment exists **without** a required reviewer:
+  the `required_reviewers` protection rule is only available on public repositories under the
+  current billing plan (planlet, public, has it; this repository is private). When the repository
+  goes public (blueprint §10 step 2), add the rule with
+  `gh api --method PUT repos/vipentti/npm-release-flow/environments/release --input env.json` and
+  body `{"reviewers":[{"type":"User","id":<owner id>}]}`. Until then no approval gate exists;
+  first release stays manual (checklist below).
 
 ## GitHub App
 
