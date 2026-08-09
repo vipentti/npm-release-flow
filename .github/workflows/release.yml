@@ -1,0 +1,147 @@
+name: npm release flow
+
+on:
+  workflow_call:
+    # No inputs. Package name, version, and tarball name are read from the
+    # consumer's package.json at the triggering commit; the verify command is
+    # the fixed `npm run release:verify` convention. An input is a second
+    # source of truth that can disagree with what is published.
+    secrets:
+      # Named, never `inherit`. `inherit` hands a workflow holding OIDC and
+      # tag-push rights every secret the caller repo can see.
+      NPM_RELEASE_FLOW_GPG_PRIVATE_KEY:
+        required: true
+      NPM_RELEASE_FLOW_GPG_PASSPHRASE:
+        required: true
+      NPM_RELEASE_FLOW_GPG_PUBLIC_KEY:
+        required: true
+      NPM_RELEASE_FLOW_APP_PRIVATE_KEY:
+        required: true
+    outputs:
+      is-release:
+        description: "true when this push is a release merge"
+        value: ${{ jobs.detect.outputs.is-release }}
+      version:
+        description: "the released version, empty when is-release is false"
+        value: ${{ jobs.detect.outputs.version }}
+
+permissions: {}
+
+jobs:
+  detect:
+    # Unprivileged. Classifies the push. Never touches release secrets.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      is-release: ${{ steps.detect.outputs.is-release }}
+      version: ${{ steps.detect.outputs.version }}
+    steps:
+      - name: Check out the consumer tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard the kit checkout path
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .npm-release-flow || {
+            echo ".npm-release-flow already exists in the consumer tree" >&2
+            exit 1
+          }
+
+      - name: Check out the kit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .npm-release-flow
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Detect release merge
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .npm-release-flow/src/detect.mjs
+
+  verify:
+    # Unprivileged. Runs every dependency install and all project code, then
+    # produces and sha256-handoffs the artifact. No id-token, deliberately:
+    # this is the job that executes consumer-controlled code.
+    needs: detect
+    if: needs.detect.outputs.is-release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      package-sha256: ${{ steps.package.outputs.package-sha256 }}
+    steps:
+      - name: Check out the consumer tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard the kit checkout path
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .npm-release-flow || {
+            echo ".npm-release-flow already exists in the consumer tree" >&2
+            exit 1
+          }
+
+      - name: Check out the kit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .npm-release-flow
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify and pack the release
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .npm-release-flow/src/verify.mjs
+
+  release:
+    # Protected. Environment approval gates it. Installs no project deps and
+    # executes no repository-owned code. id-token: write exists only here.
+    needs: [detect, verify]
+    if: needs.detect.outputs.is-release == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write   # GitHub Release creation via github.token
+      id-token: write   # npm Trusted Publishing, this job only
+    steps:
+      - name: Guard the kit checkout path
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e .npm-release-flow || {
+            echo ".npm-release-flow already exists in the consumer tree" >&2
+            exit 1
+          }
+
+      - name: Check out the kit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .npm-release-flow
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Publish the release
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .npm-release-flow/src/release.mjs
