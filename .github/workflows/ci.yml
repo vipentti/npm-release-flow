@@ -40,8 +40,9 @@ jobs:
 
       - name: Pack and placeholder smoke test
         run: |
-          npm pack --dry-run >/dev/null
-          node bin/npm-release-flow.mjs >/dev/null 2>&1 && {
+          npm pack --dry-run >/dev/null 2>&1
+          if node bin/npm-release-flow.mjs >/dev/null 2>&1; then
             echo "placeholder CLI unexpectedly succeeded" >&2
             exit 1
-          }
+          fi
+          echo "placeholder exits non-zero as expected"
