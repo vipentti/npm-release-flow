@@ -36,6 +36,7 @@ jobs:
         run: ./actionlint -ignore 'property "workflow_repository" is not defined' -ignore 'property "workflow_sha" is not defined' .github/workflows/release.yml .github/workflows/ci.yml
 
       - name: Pack and placeholder smoke test
+        shell: bash
         run: |
           npm pack --dry-run 2>&1 | grep -F '.github/workflows/release.yml'
           if node bin/npm-release-flow.mjs >/dev/null 2>&1; then
