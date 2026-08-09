@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Install actionlint (pinned v1.7.12)
+        run: |
+          curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar -xz actionlint
+          chmod +x actionlint
+
+      - name: Lint workflows
+        run: ./actionlint -ignore 'property "workflow_repository" is not defined' -ignore 'property "workflow_sha" is not defined' .github/workflows/release.yml .github/workflows/ci.yml
+
+      - name: Check the packaged workflow copy matches
+        run: cmp .github/workflows/release.yml workflow/release.yml
+
+      - name: Pack and placeholder smoke test
+        run: |
+          npm pack --dry-run >/dev/null
+          node bin/npm-release-flow.mjs >/dev/null 2>&1 && {
+            echo "placeholder CLI unexpectedly succeeded" >&2
+            exit 1
+          }

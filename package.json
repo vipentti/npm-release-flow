@@ -23,5 +23,12 @@
   },
   "engines": {
     "node": ">=22.14.0"
+  },
+  "scripts": {
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "@types/node": "24.13.3"
   }
 }
