@@ -19,11 +19,10 @@ import { fileURLToPath } from "node:url";
 
 import {
   CliError,
+  CommandError,
   ExitCode,
   describeFailure,
 } from "../lib/errors.mjs";
-import { runSync } from "../lib/spawn.mjs";
-import { CommandError } from "../lib/errors.mjs";
 import {
   git,
   gh,
@@ -31,16 +30,14 @@ import {
   remoteRefSha,
   localRefSha,
   localObjectSha,
-  gpgProgram,
 } from "../lib/repo-state.mjs";
+import { fingerprintSigningState } from "../lib/tag-verify.mjs";
 import { parseStableVersion } from "../lib/versions.mjs";
 import { classifyRelease } from "../lib/release-state.mjs";
 import { mintAppToken } from "../lib/app-token.mjs";
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 const kitRoot = resolve(moduleDir, "..", "..");
-
-const fingerprintPattern = /^[0-9a-fA-F]{40}$/;
 
 /**
  * @param {string} version
@@ -106,52 +103,21 @@ function showJson(rev, path, ctx) {
 }
 
 /**
- * Read-only signing preflight: the `NPM_RELEASE_FLOW_GPG_FINGERPRINT` env
- * value must be 40-hex and a usable secret key for it must exist in the
- * (GNUPGHOME-scoped) GPG keyring. Proven before any mutation.
+ * Read-only signing preflight wrapper for `tag`: the
+ * `NPM_RELEASE_FLOW_GPG_FINGERPRINT` env value must be 40-hex and a usable
+ * secret key for it must exist in the (GNUPGHOME-scoped) GPG keyring.
+ * Proven before any mutation.
  *
  * @param {NodeJS.ProcessEnv} env
  * @param {{ cwd: string, env: NodeJS.ProcessEnv }} ctx
  * @returns {string} The normalized (lowercase) fingerprint.
  */
 function fingerprintPreflight(env, ctx) {
-  const fingerprint = env.NPM_RELEASE_FLOW_GPG_FINGERPRINT ?? "";
-  if (!fingerprintPattern.test(fingerprint)) {
-    throw new CliError(
-      describeFailure({
-        checked: "NPM_RELEASE_FLOW_GPG_FINGERPRINT",
-        found:
-          fingerprint === ""
-            ? "the environment variable is not set"
-            : `${JSON.stringify(fingerprint)} is not 40 hexadecimal characters`,
-        correction:
-          "set NPM_RELEASE_FLOW_GPG_FINGERPRINT to the release key's 40-character primary fingerprint",
-      }),
-    );
+  const state = fingerprintSigningState({ cwd: ctx.cwd, env });
+  if (!state.ok) {
+    throw new CliError(state.message);
   }
-  const program = gpgProgram(ctx);
-  const args = ["--batch"];
-  if (env.GNUPGHOME) {
-    args.push("--homedir", env.GNUPGHOME);
-  }
-  args.push("--list-secret-keys", fingerprint.toLowerCase());
-  try {
-    runSync(program, args, ctx);
-  } catch (err) {
-    const detail =
-      err instanceof CommandError
-        ? err.stderr.trim() || err.message
-        : String(err);
-    throw new CliError(
-      describeFailure({
-        checked: `that a usable secret key for ${fingerprint.toLowerCase()} exists in the GPG keyring`,
-        found: detail,
-        correction:
-          "import or restore the release secret key in the local GPG home (GNUPGHOME)",
-      }),
-    );
-  }
-  return fingerprint.toLowerCase();
+  return state.key;
 }
 
 /**

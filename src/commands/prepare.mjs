@@ -19,7 +19,6 @@ import {
   ExitCode,
   describeFailure,
 } from "../lib/errors.mjs";
-import { runSync } from "../lib/spawn.mjs";
 import {
   git,
   gh,
@@ -28,9 +27,8 @@ import {
   remoteMainSha,
   remoteRefSha,
   localRefSha,
-  configuredSigningKey,
-  gpgProgram,
 } from "../lib/repo-state.mjs";
+import { commitSigningState } from "../lib/tag-verify.mjs";
 import { parseStableVersion, isStrictIncrease } from "../lib/versions.mjs";
 import {
   cutChangelog,
@@ -138,52 +136,20 @@ function readChangelog(cwd) {
 }
 
 /**
- * Read-only signing preflight: prove Git's configured commit-signing key is
- * configured and locally available in the (GNUPGHOME-scoped) keyring before
- * the first mutation. `git commit -S` later uses the same keyring; the check
- * goes through the same gpg program (`gpg.program`, default `gpg`) and the
- * same keyring (`--homedir` mirrors git's GNUPGHOME inheritance, explicit
- * because some gpg builds ignore the env var).
+ * Read-only signing preflight wrapper for `prepare`: refuse with the
+ * error-content message when Git's configured commit-signing key is not
+ * configured and usable in the (GNUPGHOME-scoped) keyring.
  *
  * @param {string} cwd
  * @param {NodeJS.ProcessEnv} env
  * @returns {string} The configured signing key fingerprint.
  */
 function signingPreflight(cwd, env) {
-  const key = configuredSigningKey({ cwd, env });
-  if (!key) {
-    throw new CliError(
-      describeFailure({
-        checked: "git's configured commit-signing key (user.signingkey)",
-        found: "no user.signingkey is configured",
-        correction:
-          "configure user.signingkey with the fingerprint of the key that must sign release commits",
-      }),
-    );
+  const state = commitSigningState({ cwd, env });
+  if (!state.ok) {
+    throw new CliError(state.message);
   }
-  const program = gpgProgram({ cwd, env });
-  const args = ["--batch"];
-  if (env.GNUPGHOME) {
-    args.push("--homedir", env.GNUPGHOME);
-  }
-  args.push("--list-secret-keys", key);
-  try {
-    runSync(program, args, { cwd, env });
-  } catch (err) {
-    const detail =
-      err instanceof CommandError
-        ? err.stderr.trim() || err.message
-        : String(err);
-    throw new CliError(
-      describeFailure({
-        checked: `that the configured signing key ${key} is locally available in the GPG keyring`,
-        found: detail,
-        correction:
-          "import or restore the secret key in the local GPG home (GNUPGHOME)",
-      }),
-    );
-  }
-  return key;
+  return state.key;
 }
 
 /**

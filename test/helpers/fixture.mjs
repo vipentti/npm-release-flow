@@ -84,12 +84,53 @@ if (argv[0] === "repo" && argv[1] === "view") {
   console.log(JSON.stringify({ nameWithOwner: state.repo ?? "example/fixture-consumer" }));
   process.exit(0);
 }
-if (argv[0] === "api" && argv[1].startsWith("repos/") && argv[1].endsWith("/actions/variables/NPM_RELEASE_FLOW_APP_ID")) {
-  if (typeof state.appId === "string" && state.appId !== "") {
-    console.log(JSON.stringify({ value: state.appId }));
+if (argv[0] === "auth" && argv[1] === "status") {
+  if (state.authOk === false) {
+    console.error("gh-fixture: not logged in");
+    process.exit(1);
+  }
+  console.log("Logged in to github.com as fixture");
+  process.exit(0);
+}
+if (argv[0] === "api") {
+  const url = argv[1];
+  if (url.endsWith("/actions/secrets")) {
+    console.log(JSON.stringify({ secrets: (state.secrets ?? []).map((name) => ({ name })) }));
     process.exit(0);
   }
-  console.error("gh-fixture: variable not found");
+  if (url.endsWith("/actions/variables")) {
+    console.log(JSON.stringify({ variables: (state.variables ?? []).map((name) => ({ name })) }));
+    process.exit(0);
+  }
+  if (url.endsWith("/actions/variables/NPM_RELEASE_FLOW_APP_ID")) {
+    if (typeof state.appId === "string" && state.appId !== "") {
+      console.log(JSON.stringify({ value: state.appId }));
+      process.exit(0);
+    }
+    console.error("gh-fixture: variable not found");
+    process.exit(1);
+  }
+  if (url.endsWith("/environments/release")) {
+    if (state.environmentRelease !== undefined) {
+      console.log(JSON.stringify(state.environmentRelease));
+      process.exit(0);
+    }
+    console.error("gh-fixture: environment not found");
+    process.exit(1);
+  }
+  if (url.endsWith("/environments")) {
+    console.log(JSON.stringify({ environments: (state.environments ?? []).map((name) => ({ name })) }));
+    process.exit(0);
+  }
+  if (url.endsWith("/installation")) {
+    if (typeof state.installationId === "number") {
+      console.log(JSON.stringify({ id: state.installationId }));
+      process.exit(0);
+    }
+    console.error("gh-fixture: installation not found");
+    process.exit(1);
+  }
+  console.error("gh-fixture: unhandled api call: " + url);
   process.exit(1);
 }
 console.error("gh-fixture: unhandled invocation: " + argv.join(" "));
@@ -283,12 +324,13 @@ export function setGhPrCreateUrl(fixture, url) {
  * Script the shim's repository identity and App-ID variable.
  *
  * @param {Fixture} fixture
- * @param {{ repo?: string, appId?: string }} values
+ * @param {{ repo?: string, appId?: string, secrets?: string[], variables?: string[], environments?: string[], environmentRelease?: Record<string, any> | null, installationId?: number | null, authOk?: boolean }} values
  */
 export function setGhRepoState(fixture, values) {
   const state = JSON.parse(readFileSync(fixture.ghState, "utf8"));
-  if (values.repo !== undefined) state.repo = values.repo;
-  if (values.appId !== undefined) state.appId = values.appId;
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined) state[key] = value;
+  }
   writeFileSync(fixture.ghState, JSON.stringify(state, null, 2), "utf8");
 }
 
