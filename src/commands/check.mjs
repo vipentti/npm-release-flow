@@ -58,7 +58,8 @@ const REQUIRED_VARIABLES = Object.freeze([
  * @returns {void}
  */
 function consoleLog(line) {
-  console.log(line);
+  // Problems are diagnostics: stderr, like every other failure message.
+  console.error(line);
 }
 
 /**
