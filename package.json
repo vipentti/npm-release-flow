@@ -25,10 +25,21 @@
     "node": ">=22.14.0"
   },
   "scripts": {
-    "typecheck": "tsc"
+    "knip": "knip",
+    "format:check": "prettier --check package.json tsconfig.json eslint.config.mjs knip.json \".github/workflows/*.yml\" README.md RELEASE.md \"bin/**/*.mjs\" \"src/**/*.mjs\" \"test/**/*.mjs\"",
+    "lint": "eslint \"bin/**/*.mjs\" \"src/**/*.mjs\" \"test/**/*.mjs\" eslint.config.mjs",
+    "typecheck": "tsc",
+    "format": "prettier --write package.json tsconfig.json eslint.config.mjs knip.json \".github/workflows/*.yml\" README.md RELEASE.md \"bin/**/*.mjs\" \"src/**/*.mjs\" \"test/**/*.mjs\""
   },
   "devDependencies": {
-    "typescript": "6.0.3",
-    "@types/node": "24.13.3"
+    "@eslint/js": "^10.0.1",
+    "@types/node": "24.13.3",
+    "eslint": "^10.8.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jsdoc": "^64.0.2",
+    "globals": "^17.9.0",
+    "knip": "^6.32.1",
+    "prettier": "^3.9.6",
+    "typescript": "6.0.3"
   }
 }
