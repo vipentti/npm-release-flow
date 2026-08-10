@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * npm-release-flow CLI entry point (blueprint §8): `prepare`, `tag`, and
- * `check` with dry-run default, `--execute` mutation, and exit codes 0/1/2.
+ * npm-release-flow CLI entry point: `prepare`, `tag`, and `check` with
+ * dry-run default, `--execute` mutation, and exit codes 0/1/2.
  * Argument parsing via `node:util` `parseArgs`; usage + exit 1 for a missing
  * or unknown subcommand or an unknown flag.
  */
@@ -38,7 +38,7 @@ function usageText() {
 }
 
 /**
- * @typedef {Object} MainOptions
+ * @typedef {object} MainOptions
  * @property {string} [cwd] Repository root the commands operate on.
  * @property {NodeJS.ProcessEnv} [env] Environment for the commands.
  * @property {(line: string) => void} [log] Plan-line sink.
@@ -66,7 +66,9 @@ export async function main(argv = process.argv.slice(2), options = {}) {
       },
     }));
   } catch (err) {
-    console.error(`npm-release-flow: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(
+      `npm-release-flow: ${err instanceof Error ? err.message : String(err)}`,
+    );
     console.error(usageText());
     return ExitCode.ERROR;
   }
@@ -77,12 +79,16 @@ export async function main(argv = process.argv.slice(2), options = {}) {
   }
   const subcommand = positionals[0];
   if (subcommand === undefined) {
-    console.error("npm-release-flow: missing subcommand (expected prepare, tag, or check)");
+    console.error(
+      "npm-release-flow: missing subcommand (expected prepare, tag, or check)",
+    );
     console.error(usageText());
     return ExitCode.ERROR;
   }
   if (!SUBCOMMANDS.includes(subcommand)) {
-    console.error(`npm-release-flow: unknown subcommand ${JSON.stringify(subcommand)} (expected prepare, tag, or check)`);
+    console.error(
+      `npm-release-flow: unknown subcommand ${JSON.stringify(subcommand)} (expected prepare, tag, or check)`,
+    );
     console.error(usageText());
     return ExitCode.ERROR;
   }
@@ -94,7 +100,9 @@ export async function main(argv = process.argv.slice(2), options = {}) {
     return ExitCode.ERROR;
   }
   if ((subcommand === "prepare" || subcommand === "tag") && !values.version) {
-    console.error(`npm-release-flow: --version X.Y.Z is required for ${subcommand}`);
+    console.error(
+      `npm-release-flow: --version X.Y.Z is required for ${subcommand}`,
+    );
     console.error(usageText());
     return ExitCode.ERROR;
   }
@@ -107,13 +115,19 @@ export async function main(argv = process.argv.slice(2), options = {}) {
   try {
     if (subcommand === "prepare") {
       return await prepare(
-        { version: /** @type {string} */ (values.version), execute: values.execute ?? false },
+        {
+          version: /** @type {string} */ (values.version),
+          execute: values.execute ?? false,
+        },
         runOptions,
       );
     }
     if (subcommand === "tag") {
       return await tag(
-        { version: /** @type {string} */ (values.version), execute: values.execute ?? false },
+        {
+          version: /** @type {string} */ (values.version),
+          execute: values.execute ?? false,
+        },
         runOptions,
       );
     }

@@ -18,9 +18,38 @@ export default [
         ...globals.node,
       },
     },
+    settings: {
+      // The sources are JSDoc-typed JS feeding `tsc` checkJs: allow the
+      // TypeScript type vocabulary (Record<...>, NodeJS.ProcessEnv, ...).
+      jsdoc: { mode: "typescript" },
+    },
     rules: {
-      // JSDoc types feed `tsc` checkJs; require well-formed docs on
-      // exported functions without being noisy about internal details.
+      // JSDoc feeds `tsc` checkJs. Enforce presence on functions in the
+      // shipped code (bin + src); tests document helpers where useful.
+      "jsdoc/require-jsdoc": "off",
+      "jsdoc/require-param-description": "off",
+      "jsdoc/require-returns-description": "off",
+      "jsdoc/require-description": "off",
+      "jsdoc/tag-lines": "off",
+      "jsdoc/reject-any-type": "off",
+      // Cross-module typedefs and NodeJS.* namespaces are normal in this
+      // codebase; tsc checkJs is the authoritative type-checker.
+      "jsdoc/no-undefined-types": "off",
+      // Parameters kept for caller compatibility are named `_param`.
+      "no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", caughtErrors: "all" },
+      ],
+      // The kit spawns subprocesses only through src/lib/spawn.mjs.
+      "no-restricted-globals": [
+        "error",
+        { name: "fetch", message: "use src/lib/app-token.mjs for API calls" },
+      ],
+    },
+  },
+  {
+    files: ["bin/**/*.mjs", "src/**/*.mjs"],
+    rules: {
       "jsdoc/require-jsdoc": [
         "error",
         {
@@ -32,14 +61,15 @@ export default [
           },
         },
       ],
+    },
+  },
+  {
+    // Test helpers document their meaning, not their types: the shapes are
+    // exercised by the tests themselves, so skip the type/returns ceremony.
+    files: ["test/**/*.mjs"],
+    rules: {
+      "jsdoc/require-returns": "off",
       "jsdoc/require-param-type": "off",
-      "jsdoc/require-returns-type": "off",
-      "jsdoc/require-description": "off",
-      // The kit spawns subprocesses only through src/lib/spawn.mjs.
-      "no-restricted-globals": [
-        "error",
-        { name: "fetch", message: "use src/lib/app-token.mjs for API calls" },
-      ],
     },
   },
   prettierConfig,

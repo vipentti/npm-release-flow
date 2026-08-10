@@ -1,5 +1,5 @@
 /**
- * Revalidation script (§9, T9): runs twice in the protected job — once after
+ * Revalidation script: runs twice in the protected job — once after
  * the tag probe and artifact validation (before any secret loads), once
  * immediately before tag creation (TOCTOU guard). Requires the triggering
  * SHA still reachable from `origin/main` and the three control files at
@@ -13,7 +13,7 @@ import { git } from "./lib/repo-state.mjs";
 const RELEASE_FILES = ["CHANGELOG.md", "package.json", "package-lock.json"];
 
 /**
- * @typedef {Object} RevalidateOptions
+ * @typedef {object} RevalidateOptions
  * @property {string} [cwd] Repository root (the consumer workspace).
  * @property {NodeJS.ProcessEnv} [env] Environment (GITHUB_SHA, GH_TOKEN).
  * @property {(line: string) => void} [log] Output sink.
@@ -56,7 +56,7 @@ export async function revalidate(options = {}) {
 
   try {
     git(["fetch", "origin", "main"], ctx);
-  } catch (err) {
+  } catch {
     log(
       describeFailure({
         checked: "origin/main",
@@ -73,7 +73,8 @@ export async function revalidate(options = {}) {
   } catch {
     log(
       describeFailure({
-        checked: "that the triggering commit is still reachable from origin/main",
+        checked:
+          "that the triggering commit is still reachable from origin/main",
         found: `${afterSha.slice(0, 8)} is not an ancestor of origin/main`,
         correction:
           "re-run on a fresh push; the release request was superseded",
@@ -86,14 +87,7 @@ export async function revalidate(options = {}) {
   // the triggering commit exactly.
   try {
     git(
-      [
-        "diff",
-        "--quiet",
-        afterSha,
-        "origin/main",
-        "--",
-        ...RELEASE_FILES,
-      ],
+      ["diff", "--quiet", afterSha, "origin/main", "--", ...RELEASE_FILES],
       ctx,
     );
   } catch {

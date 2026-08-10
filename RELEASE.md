@@ -13,21 +13,21 @@ Blueprint pin: `vipentti/agent-blueprints` @ `f9d06c77b9920e4cfab774d254f22d6089
 All four are named in the reusable workflow with `required: true`; a caller missing one fails at
 call time (T10).
 
-| Secret | Purpose |
-| --- | --- |
-| `NPM_RELEASE_FLOW_GPG_PRIVATE_KEY` | GPG private key; signs the release tag (§6) |
-| `NPM_RELEASE_FLOW_GPG_PASSPHRASE` | Passphrase for the private key (§6) |
-| `NPM_RELEASE_FLOW_GPG_PUBLIC_KEY` | Public key; verify-only reruns, private key never loaded (§6) |
-| `NPM_RELEASE_FLOW_APP_PRIVATE_KEY` | GitHub App private key; the only tag-push identity (T11) |
+| Secret                             | Purpose                                                       |
+| ---------------------------------- | ------------------------------------------------------------- |
+| `NPM_RELEASE_FLOW_GPG_PRIVATE_KEY` | GPG private key; signs the release tag (§6)                   |
+| `NPM_RELEASE_FLOW_GPG_PASSPHRASE`  | Passphrase for the private key (§6)                           |
+| `NPM_RELEASE_FLOW_GPG_PUBLIC_KEY`  | Public key; verify-only reruns, private key never loaded (§6) |
+| `NPM_RELEASE_FLOW_APP_PRIVATE_KEY` | GitHub App private key; the only tag-push identity (T11)      |
 
 ## Variables (Actions, repository scope)
 
-| Variable | Purpose |
-| --- | --- |
+| Variable                           | Purpose                                               |
+| ---------------------------------- | ----------------------------------------------------- |
 | `NPM_RELEASE_FLOW_GPG_FINGERPRINT` | Primary fingerprint the tag signature must match (§6) |
-| `NPM_RELEASE_FLOW_GIT_NAME` | Git identity used for release commits and tags |
-| `NPM_RELEASE_FLOW_GIT_EMAIL` | Git identity used for release commits and tags |
-| `NPM_RELEASE_FLOW_APP_ID` | GitHub App id of the tag-push identity (§6) |
+| `NPM_RELEASE_FLOW_GIT_NAME`        | Git identity used for release commits and tags        |
+| `NPM_RELEASE_FLOW_GIT_EMAIL`       | Git identity used for release commits and tags        |
+| `NPM_RELEASE_FLOW_APP_ID`          | GitHub App id of the tag-push identity (§6)           |
 
 ## Release environment
 

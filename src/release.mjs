@@ -1,5 +1,5 @@
 /**
- * Release job mutation orchestration (§9 boundaries 4-6, T10). Env-driven:
+ * Release job mutation orchestration. Env-driven:
  * `VERSION` from detect, `TAG_EXISTS` from the tag-probe step output (used
  * as-is; no pre-mutation re-probe), `GITHUB_SHA`, `GITHUB_REPOSITORY`,
  * `GNUPGHOME` and `PACKAGE_TARBALL` inherited through `$GITHUB_ENV`,
@@ -35,7 +35,7 @@ const shaPattern = /^[0-9a-f]{40}$/;
 const fingerprintPattern = /^[0-9a-fA-F]{40}$/;
 
 /**
- * @typedef {Object} ReleaseOptions
+ * @typedef {object} ReleaseOptions
  * @property {string} [cwd] Repository root (the consumer workspace).
  * @property {NodeJS.ProcessEnv} [env] Environment.
  * @property {(line: string) => void} [log] Output sink.
@@ -114,7 +114,8 @@ export function verifyTagObject({ version, targetSha, fingerprint, cwd, env }) {
   if (validsigs[0][1].toLowerCase() !== fingerprint) {
     throw new CliError(
       describeFailure({
-        checked: "that the signature's primary fingerprint matches NPM_RELEASE_FLOW_GPG_FINGERPRINT",
+        checked:
+          "that the signature's primary fingerprint matches NPM_RELEASE_FLOW_GPG_FINGERPRINT",
         found: validsigs[0][1],
         correction: "the tag must be signed with the configured release key",
       }),
@@ -184,10 +185,9 @@ export function createAndPushTag({
     throw new CliError(
       describeFailure({
         checked: "that the remote tag object equals the local tag object",
-        found:
-          !shaPattern.test(verified ?? "")
-            ? "the remote tag is absent"
-            : `remote ${verified.slice(0, 8)} != local ${tagObject.slice(0, 8)}`,
+        found: !shaPattern.test(verified ?? "")
+          ? "the remote tag is absent"
+          : `remote ${verified.slice(0, 8)} != local ${tagObject.slice(0, 8)}`,
         correction:
           "resolve the remote tag state manually (a divergent remote tag rejects the push)",
       }),
@@ -214,7 +214,7 @@ export function verifyOnlyTag({ version, targetSha, fingerprint, cwd, env }) {
 }
 
 /**
- * GitHub API signature-verification poll (§9 boundary 4): the annotated tag
+ * GitHub API signature-verification poll: the annotated tag
  * object's `.verification.verified` must become true (polled). The API
  * verification is the workflow-side proof that GitHub itself validates the
  * signature.
@@ -286,7 +286,9 @@ export async function pollGithubSignatureVerification({
  * @returns {{ name: string, version: string, repositoryUrl: string | null }}
  */
 function readWorkspaceManifest(cwd) {
-  const manifest = JSON.parse(readFileSync(resolve(cwd, "package.json"), "utf8"));
+  const manifest = JSON.parse(
+    readFileSync(resolve(cwd, "package.json"), "utf8"),
+  );
   const name =
     typeof manifest.name === "string" && manifest.name !== ""
       ? manifest.name
@@ -419,7 +421,11 @@ export function publishedIdentityProblems({
       `published dist.integrity does not equal the packed integrity (${packedIntegrity.slice(0, 24)}...)`,
     );
   }
-  if (gitHead !== null && published.gitHead !== undefined && published.gitHead !== gitHead) {
+  if (
+    gitHead !== null &&
+    published.gitHead !== undefined &&
+    published.gitHead !== gitHead
+  ) {
     problems.push(
       `published gitHead ${JSON.stringify(published.gitHead)} does not match the triggering commit ${JSON.stringify(gitHead)}`,
     );
@@ -529,7 +535,7 @@ export async function publishRelease({
 export async function ensureGithubRelease({ version, notes, cwd, env }) {
   const ctx = { cwd, env };
   const title = `Release v${version}`;
-  let present = false;
+  let present;
   try {
     gh(["release", "view", `v${version}`], ctx);
     present = true;
@@ -641,14 +647,17 @@ export async function release(options = {}) {
     if (manifest.version !== version) {
       throw new CliError(
         describeFailure({
-          checked: "that the workspace manifest version equals the release version",
+          checked:
+            "that the workspace manifest version equals the release version",
           found: `package.json.version is ${JSON.stringify(manifest.version)}, expected ${JSON.stringify(version)}`,
           correction: "the release commit must carry the released version",
         }),
       );
     }
 
-    log(`[release] version ${version} at ${targetSha.slice(0, 8)} (tag-exists=${tagExists})`);
+    log(
+      `[release] version ${version} at ${targetSha.slice(0, 8)} (tag-exists=${tagExists})`,
+    );
 
     // --- Boundary 4: tag push or verify-only ---
 
@@ -702,7 +711,8 @@ export async function release(options = {}) {
         describeFailure({
           checked: "PACKAGE_TARBALL",
           found: "the environment variable is not set",
-          correction: "wire it from the artifact-validation step's GITHUB_ENV write",
+          correction:
+            "wire it from the artifact-validation step's GITHUB_ENV write",
         }),
       );
     }
@@ -726,7 +736,8 @@ export async function release(options = {}) {
         describeFailure({
           checked: `the [${version}] changelog section for release notes`,
           found: "no such section in CHANGELOG.md",
-          correction: "the release commit must carry the released changelog section",
+          correction:
+            "the release commit must carry the released changelog section",
         }),
       );
     }

@@ -21,7 +21,11 @@ function revalidateFixture() {
 test("revalidate passes for a valid release merge", async () => {
   const { fixture, env } = revalidateFixture();
   try {
-    const mergeSha = createReleaseMerge(fixture, { version: "1.2.3", prNumber: 12 }, env);
+    const mergeSha = createReleaseMerge(
+      fixture,
+      { version: "1.2.3", prNumber: 12 },
+      env,
+    );
     const code = await revalidate({
       cwd: fixture.consumer,
       env: { ...env, GITHUB_SHA: mergeSha },
@@ -36,7 +40,11 @@ test("revalidate passes for a valid release merge", async () => {
 test("revalidate passes when only non-control files changed after the merge", async () => {
   const { fixture, env } = revalidateFixture();
   try {
-    const mergeSha = createReleaseMerge(fixture, { version: "1.2.3", prNumber: 12 }, env);
+    const mergeSha = createReleaseMerge(
+      fixture,
+      { version: "1.2.3", prNumber: 12 },
+      env,
+    );
     writeFileSync(join(fixture.consumer, "README.md"), "# follow-up\n");
     git(["add", "."], { cwd: fixture.consumer, env });
     git(["commit", "-m", "ordinary follow-up"], { cwd: fixture.consumer, env });
@@ -55,10 +63,12 @@ test("revalidate passes when only non-control files changed after the merge", as
 test("revalidate fails when a control file changed after the merge", async () => {
   const { fixture, env } = revalidateFixture();
   try {
-    const mergeSha = createReleaseMerge(fixture, { version: "1.2.3", prNumber: 12 }, env);
-    const pkg = JSON.parse(
-      readConsumerFile(fixture, "package.json"),
+    const mergeSha = createReleaseMerge(
+      fixture,
+      { version: "1.2.3", prNumber: 12 },
+      env,
     );
+    const pkg = JSON.parse(readConsumerFile(fixture, "package.json"));
     pkg.description = "tampered";
     writeFileSync(
       join(fixture.consumer, "package.json"),
@@ -91,7 +101,9 @@ test("revalidate fails when the triggering SHA is not reachable from origin/main
     writeFileSync(join(fixture.consumer, "README.md"), "# side work\n");
     git(["add", "."], { cwd: fixture.consumer, env });
     git(["commit", "-m", "side commit"], { cwd: fixture.consumer, env });
-    const sideSha = git(["rev-parse", "HEAD"], { cwd: fixture.consumer }).stdout.trim();
+    const sideSha = git(["rev-parse", "HEAD"], {
+      cwd: fixture.consumer,
+    }).stdout.trim();
     const problems = [];
     const code = await revalidate({
       cwd: fixture.consumer,

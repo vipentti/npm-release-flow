@@ -57,6 +57,7 @@ function goodCheckFixture() {
 
 /**
  * @param {ReturnType<typeof goodCheckFixture>} ctx
+ * @param execute
  */
 function run(ctx, execute = false) {
   return check(
@@ -90,10 +91,16 @@ test("check flags a missing CHANGELOG.md", async () => {
     const problems = [];
     const code = await check(
       { execute: false },
-      { cwd: ctx.fixture.consumer, env: ctx.env, log: (line) => problems.push(line) },
+      {
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        log: (line) => problems.push(line),
+      },
     );
     assert.equal(code, 1);
-    assert.ok(problems.some((p) => /Checked: the CHANGELOG\.md control file\./.test(p)));
+    assert.ok(
+      problems.some((p) => /Checked: the CHANGELOG\.md control file\./.test(p)),
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -102,18 +109,32 @@ test("check flags a missing CHANGELOG.md", async () => {
 test("check flags a changelog without an [Unreleased] section", async () => {
   const ctx = goodCheckFixture();
   try {
-    const changelog = readFileSync(join(ctx.fixture.consumer, "CHANGELOG.md"), "utf8");
+    const changelog = readFileSync(
+      join(ctx.fixture.consumer, "CHANGELOG.md"),
+      "utf8",
+    );
     writeFileSync(
       join(ctx.fixture.consumer, "CHANGELOG.md"),
-      changelog.replace("## [Unreleased]\n\n- Added a fixture feature.\n\n", ""),
+      changelog.replace(
+        "## [Unreleased]\n\n- Added a fixture feature.\n\n",
+        "",
+      ),
     );
     const problems = [];
     const code = await check(
       { execute: false },
-      { cwd: ctx.fixture.consumer, env: ctx.env, log: (line) => problems.push(line) },
+      {
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        log: (line) => problems.push(line),
+      },
     );
     assert.equal(code, 1);
-    assert.ok(problems.some((p) => /Checked: the ## \[Unreleased\] section in CHANGELOG\.md\./.test(p)));
+    assert.ok(
+      problems.some((p) =>
+        /Checked: the ## \[Unreleased\] section in CHANGELOG\.md\./.test(p),
+      ),
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -122,7 +143,9 @@ test("check flags a changelog without an [Unreleased] section", async () => {
 test("check flags a missing release:verify script", async () => {
   const ctx = goodCheckFixture();
   try {
-    const pkg = JSON.parse(readFileSync(join(ctx.fixture.consumer, "package.json"), "utf8"));
+    const pkg = JSON.parse(
+      readFileSync(join(ctx.fixture.consumer, "package.json"), "utf8"),
+    );
     delete pkg.scripts;
     writeFileSync(
       join(ctx.fixture.consumer, "package.json"),
@@ -131,10 +154,18 @@ test("check flags a missing release:verify script", async () => {
     const problems = [];
     const code = await check(
       { execute: false },
-      { cwd: ctx.fixture.consumer, env: ctx.env, log: (line) => problems.push(line) },
+      {
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        log: (line) => problems.push(line),
+      },
     );
     assert.equal(code, 1);
-    assert.ok(problems.some((p) => /Checked: the release:verify script in package\.json\./.test(p)));
+    assert.ok(
+      problems.some((p) =>
+        /Checked: the release:verify script in package\.json\./.test(p),
+      ),
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -147,7 +178,11 @@ test("check flags an uncommitted lockfile", async () => {
     const problems = [];
     const code = await check(
       { execute: false },
-      { cwd: ctx.fixture.consumer, env: ctx.env, log: (line) => problems.push(line) },
+      {
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        log: (line) => problems.push(line),
+      },
     );
     assert.equal(code, 1);
     assert.ok(problems.some((p) => /exists but is not tracked by git/.test(p)));
@@ -160,16 +195,28 @@ test("check flags missing secrets by name", async () => {
   const ctx = goodCheckFixture();
   try {
     setGhRepoState(ctx.fixture, {
-      secrets: ALL_SECRETS.filter((name) => name !== "NPM_RELEASE_FLOW_GPG_PASSPHRASE"),
+      secrets: ALL_SECRETS.filter(
+        (name) => name !== "NPM_RELEASE_FLOW_GPG_PASSPHRASE",
+      ),
     });
     const problems = [];
     const code = await check(
       { execute: false },
-      { cwd: ctx.fixture.consumer, env: ctx.env, log: (line) => problems.push(line) },
+      {
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        log: (line) => problems.push(line),
+      },
     );
     assert.equal(code, 1);
-    assert.ok(problems.some((p) => /Checked: the NPM_RELEASE_FLOW_GPG_PASSPHRASE secret\./.test(p)));
-    assert.ok(problems.some((p) => /Found: it is not set on the repository\./.test(p)));
+    assert.ok(
+      problems.some((p) =>
+        /Checked: the NPM_RELEASE_FLOW_GPG_PASSPHRASE secret\./.test(p),
+      ),
+    );
+    assert.ok(
+      problems.some((p) => /Found: it is not set on the repository\./.test(p)),
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -179,15 +226,25 @@ test("check flags missing variables by name", async () => {
   const ctx = goodCheckFixture();
   try {
     setGhRepoState(ctx.fixture, {
-      variables: ALL_VARIABLES.filter((name) => name !== "NPM_RELEASE_FLOW_GIT_EMAIL"),
+      variables: ALL_VARIABLES.filter(
+        (name) => name !== "NPM_RELEASE_FLOW_GIT_EMAIL",
+      ),
     });
     const problems = [];
     const code = await check(
       { execute: false },
-      { cwd: ctx.fixture.consumer, env: ctx.env, log: (line) => problems.push(line) },
+      {
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        log: (line) => problems.push(line),
+      },
     );
     assert.equal(code, 1);
-    assert.ok(problems.some((p) => /Checked: the NPM_RELEASE_FLOW_GIT_EMAIL variable\./.test(p)));
+    assert.ok(
+      problems.some((p) =>
+        /Checked: the NPM_RELEASE_FLOW_GIT_EMAIL variable\./.test(p),
+      ),
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -200,11 +257,19 @@ test("check flags a missing release Environment", async () => {
     const problems = [];
     const code = await check(
       { execute: false },
-      { cwd: ctx.fixture.consumer, env: ctx.env, log: (line) => problems.push(line) },
+      {
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        log: (line) => problems.push(line),
+      },
     );
     assert.equal(code, 1);
-    assert.ok(problems.some((p) => /Checked: the release Environment\./.test(p)));
-    assert.ok(problems.some((p) => /no Environment named release exists/.test(p)));
+    assert.ok(
+      problems.some((p) => /Checked: the release Environment\./.test(p)),
+    );
+    assert.ok(
+      problems.some((p) => /no Environment named release exists/.test(p)),
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -219,10 +284,16 @@ test("check flags a release Environment without required-reviewer protection", a
     const problems = [];
     const code = await check(
       { execute: false },
-      { cwd: ctx.fixture.consumer, env: ctx.env, log: (line) => problems.push(line) },
+      {
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        log: (line) => problems.push(line),
+      },
     );
     assert.equal(code, 1);
-    assert.ok(problems.some((p) => /has no required-reviewer protection/.test(p)));
+    assert.ok(
+      problems.some((p) => /has no required-reviewer protection/.test(p)),
+    );
     assert.ok(problems.some((p) => /no approval gate otherwise/.test(p)));
   } finally {
     ctx.fixture.cleanup();
@@ -236,10 +307,16 @@ test("check flags a missing App installation", async () => {
     const problems = [];
     const code = await check(
       { execute: false },
-      { cwd: ctx.fixture.consumer, env: ctx.env, log: (line) => problems.push(line) },
+      {
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        log: (line) => problems.push(line),
+      },
     );
     assert.equal(code, 1);
-    assert.ok(problems.some((p) => /the release GitHub App is installed/.test(p)));
+    assert.ok(
+      problems.some((p) => /the release GitHub App is installed/.test(p)),
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -256,7 +333,13 @@ test("check flags a missing NPM_RELEASE_FLOW_APP_PRIVATE_KEY env value", async (
       { cwd: ctx.fixture.consumer, env, log: (line) => problems.push(line) },
     );
     assert.equal(code, 1);
-    assert.ok(problems.some((p) => /Checked: NPM_RELEASE_FLOW_APP_PRIVATE_KEY in the local environment\./.test(p)));
+    assert.ok(
+      problems.some((p) =>
+        /Checked: NPM_RELEASE_FLOW_APP_PRIVATE_KEY in the local environment\./.test(
+          p,
+        ),
+      ),
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -269,7 +352,11 @@ test("check flags failing gh authentication", async () => {
     const problems = [];
     const code = await check(
       { execute: false },
-      { cwd: ctx.fixture.consumer, env: ctx.env, log: (line) => problems.push(line) },
+      {
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        log: (line) => problems.push(line),
+      },
     );
     assert.equal(code, 1);
     assert.ok(problems.some((p) => /Checked: gh authentication\./.test(p)));
@@ -286,7 +373,11 @@ test("check flags a missing git identity", async () => {
     const problems = [];
     const code = await check(
       { execute: false },
-      { cwd: ctx.fixture.consumer, env: ctx.env, log: (line) => problems.push(line) },
+      {
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        log: (line) => problems.push(line),
+      },
     );
     assert.equal(code, 1);
     assert.ok(problems.some((p) => /Checked: the git identity\./.test(p)));
@@ -323,7 +414,13 @@ test("check flags a missing commit-signing key", async () => {
       { cwd: fixture.consumer, env, log: (line) => problems.push(line) },
     );
     assert.equal(code, 1);
-    assert.ok(problems.some((p) => /Checked: git's configured commit-signing key \(user\.signingkey\)\./.test(p)));
+    assert.ok(
+      problems.some((p) =>
+        /Checked: git's configured commit-signing key \(user\.signingkey\)\./.test(
+          p,
+        ),
+      ),
+    );
   } finally {
     fixture.cleanup();
   }
@@ -357,7 +454,11 @@ test("check flags a missing NPM_RELEASE_FLOW_GPG_FINGERPRINT and its key", async
       { cwd: fixture.consumer, env, log: (line) => problems.push(line) },
     );
     assert.equal(code, 1);
-    assert.ok(problems.some((p) => /Checked: NPM_RELEASE_FLOW_GPG_FINGERPRINT\./.test(p)));
+    assert.ok(
+      problems.some((p) =>
+        /Checked: NPM_RELEASE_FLOW_GPG_FINGERPRINT\./.test(p),
+      ),
+    );
   } finally {
     fixture.cleanup();
   }
@@ -380,7 +481,10 @@ test("check lists every problem, not just the first", async () => {
       { cwd: fixture.consumer, env, log: (line) => problems.push(line) },
     );
     assert.equal(code, 1);
-    assert.ok(problems.length >= 6, `expected multiple problems, got ${problems.length}`);
+    assert.ok(
+      problems.length >= 6,
+      `expected multiple problems, got ${problems.length}`,
+    );
     assert.match(problems.join("\n"), /Found \d+ problem\(s\)\./);
   } finally {
     fixture.cleanup();

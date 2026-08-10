@@ -78,7 +78,9 @@ test("hasUnreleasedSection requires exactly one bare heading", () => {
   assert.equal(hasUnreleasedSection(sample), true);
   assert.equal(hasUnreleasedSection("# No sections here\n"), false);
   assert.equal(
-    hasUnreleasedSection(sample.replace("## [Unreleased]", "## [Unreleased] - 2026-08-01")),
+    hasUnreleasedSection(
+      sample.replace("## [Unreleased]", "## [Unreleased] - 2026-08-01"),
+    ),
     false,
     "dated Unreleased heading is malformed",
   );
@@ -117,8 +119,14 @@ test("cutChangelog moves the Unreleased body into a dated section and rewrites l
   assert.equal(all[2].label, "1.2.2");
   const labels = linkReferenceLabels(content);
   assert.equal(labels.has("1.2.2"), true, "prior links preserved");
-  assert.match(content, new RegExp(`\\[Unreleased\\]: ${compareUrl}/v1\\.2\\.3\\.\\.\\.HEAD`));
-  assert.match(content, new RegExp(`\\[1\\.2\\.3\\]: ${compareUrl}/v1\\.2\\.2\\.\\.\\.v1\\.2\\.3`));
+  assert.match(
+    content,
+    new RegExp(`\\[Unreleased\\]: ${compareUrl}/v1\\.2\\.3\\.\\.\\.HEAD`),
+  );
+  assert.match(
+    content,
+    new RegExp(`\\[1\\.2\\.3\\]: ${compareUrl}/v1\\.2\\.2\\.\\.\\.v1\\.2\\.3`),
+  );
   assert.ok(content.endsWith("\n"));
 });
 
@@ -164,12 +172,17 @@ test("validReleasedChangelog rejects every invalid row", () => {
   const cases = [
     {
       name: "non-empty Unreleased",
-      edit: (c) => c.replace("## [Unreleased]\n\n## [1.2.3]", "## [Unreleased]\n\n- Not moved.\n\n## [1.2.3]"),
+      edit: (c) =>
+        c.replace(
+          "## [Unreleased]\n\n## [1.2.3]",
+          "## [Unreleased]\n\n- Not moved.\n\n## [1.2.3]",
+        ),
       match: /must be empty/,
     },
     {
       name: "no version section",
-      edit: (c) => c.replace("\n## [1.2.3] - 2026-08-01\n\n- Released 1.2.3.\n", "\n"),
+      edit: (c) =>
+        c.replace("\n## [1.2.3] - 2026-08-01\n\n- Released 1.2.3.\n", "\n"),
       match: /expected exactly one \[1\.2\.3\] section/,
     },
     {
@@ -189,7 +202,11 @@ test("validReleasedChangelog rejects every invalid row", () => {
     },
     {
       name: "missing link reference",
-      edit: (c) => c.replace("[1.2.3]: https://github.com/example/repo/compare/v1.2.2...v1.2.3\n", ""),
+      edit: (c) =>
+        c.replace(
+          "[1.2.3]: https://github.com/example/repo/compare/v1.2.2...v1.2.3\n",
+          "",
+        ),
       match: /missing link reference\(s\): \[1\.2\.3\]/,
     },
   ];

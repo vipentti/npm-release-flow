@@ -11,6 +11,8 @@ import { createFixtureRepo, envWithShim } from "./helpers/fixture.mjs";
 /**
  * Produce a real artifact directory (tarball + pack.json) for a fixture
  * consumer, mirroring what the verify job uploads.
+ * @param fixture
+ * @param env
  */
 function produceArtifact(fixture, env) {
   const packDir = join(fixture.base, "produced-pack");
@@ -69,7 +71,13 @@ test("validate-artifact: passes for a real artifact and writes PACKAGE_TARBALL",
     const code = await runValidate(ctx);
     assert.equal(code, 0);
     const githubEnv = readFileSync(ctx.githubEnv, "utf8");
-    assert.match(githubEnv, new RegExp(`^PACKAGE_TARBALL=${escapeRegExp(join(ctx.artifactDir, ctx.tarball))}$`, "m"));
+    assert.match(
+      githubEnv,
+      new RegExp(
+        `^PACKAGE_TARBALL=${escapeRegExp(join(ctx.artifactDir, ctx.tarball))}$`,
+        "m",
+      ),
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -170,7 +178,11 @@ test("validate-artifact: fails when the pack report names a different tarball", 
     entries[0].filename = "other-1.2.2.tgz";
     writeFileSync(
       packPath,
-      JSON.stringify(Array.isArray(report) ? entries : { entry: entries[0] }, null, 2) + "\n",
+      JSON.stringify(
+        Array.isArray(report) ? entries : { entry: entries[0] },
+        null,
+        2,
+      ) + "\n",
     );
     const problems = [];
     const code = await validateArtifact({
@@ -183,7 +195,10 @@ test("validate-artifact: fails when the pack report names a different tarball", 
       log: (line) => problems.push(line),
     });
     assert.equal(code, 1);
-    assert.match(problems.join("\n"), /Checked: that the tarball matches the pack report\./);
+    assert.match(
+      problems.join("\n"),
+      /Checked: that the tarball matches the pack report\./,
+    );
   } finally {
     ctx.fixture.cleanup();
   }

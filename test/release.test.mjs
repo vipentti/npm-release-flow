@@ -44,7 +44,9 @@ function releaseFixture() {
     tagVerification: "true",
   });
   const env = prependPathDirs(envWithShim(fixture), [npmShim.dir]);
-  const head = git(["rev-parse", "HEAD"], { cwd: fixture.consumer }).stdout.trim();
+  const head = git(["rev-parse", "HEAD"], {
+    cwd: fixture.consumer,
+  }).stdout.trim();
   return {
     fixture,
     npmShim,
@@ -68,6 +70,8 @@ function releaseFixture() {
 /**
  * A dummy tarball file plus the npm state for a successful publish-then-
  * verify flow.
+ * @param ctx
+ * @param version
  */
 function seedPublishState(ctx, version = "1.2.2") {
   const tarballPath = ctx.env.PACKAGE_TARBALL;
@@ -119,7 +123,9 @@ test("publishedIdentityProblems: name, version, repository, integrity, gitHead",
     published: {
       name: "fixture-consumer",
       version: "1.2.2",
-      repository: { url: "git+https://github.com/example/fixture-consumer.git" },
+      repository: {
+        url: "git+https://github.com/example/fixture-consumer.git",
+      },
       dist: { integrity },
       gitHead: "a".repeat(40),
     },
@@ -135,17 +141,28 @@ test("publishedIdentityProblems: name, version, repository, integrity, gitHead",
     ...good,
     published: { ...good.published, name: "other" },
   });
-  assert.ok(badName.some((p) => /published name "other" does not match "fixture-consumer"/.test(p)));
+  assert.ok(
+    badName.some((p) =>
+      /published name "other" does not match "fixture-consumer"/.test(p),
+    ),
+  );
 
   const badVersion = publishedIdentityProblems({
     ...good,
     published: { ...good.published, version: "9.9.9" },
   });
-  assert.ok(badVersion.some((p) => /published version "9\.9\.9" does not match "1\.2\.2"/.test(p)));
+  assert.ok(
+    badVersion.some((p) =>
+      /published version "9\.9\.9" does not match "1\.2\.2"/.test(p),
+    ),
+  );
 
   const badRepo = publishedIdentityProblems({
     ...good,
-    published: { ...good.published, repository: { url: "https://github.com/evil/repo.git" } },
+    published: {
+      ...good.published,
+      repository: { url: "https://github.com/evil/repo.git" },
+    },
   });
   assert.ok(badRepo.some((p) => /does not match the source/.test(p)));
 
@@ -153,7 +170,11 @@ test("publishedIdentityProblems: name, version, repository, integrity, gitHead",
     ...good,
     published: { ...good.published, dist: { integrity: "sha512-AAAA" } },
   });
-  assert.ok(badIntegrity.some((p) => /dist\.integrity does not equal the packed integrity/.test(p)));
+  assert.ok(
+    badIntegrity.some((p) =>
+      /dist\.integrity does not equal the packed integrity/.test(p),
+    ),
+  );
 
   // gitHead is checked only when present in the published manifest.
   const missingGitHead = publishedIdentityProblems({
@@ -187,7 +208,11 @@ test("viewPublishedVersion: E404 is null, present returns the manifest", async (
     // this test exercises the read side only).
     const state = JSON.parse(readFileSync(ctx.npmShim.stateFile, "utf8"));
     state.views = { "fixture-consumer@1.2.2": manifest };
-    writeFileSync(ctx.npmShim.stateFile, JSON.stringify(state, null, 2), "utf8");
+    writeFileSync(
+      ctx.npmShim.stateFile,
+      JSON.stringify(state, null, 2),
+      "utf8",
+    );
     const viewed = viewPublishedVersion({
       name: "fixture-consumer",
       version: "1.2.2",
@@ -198,7 +223,11 @@ test("viewPublishedVersion: E404 is null, present returns the manifest", async (
     assert.equal(viewed.version, "1.2.2");
     const calls = npmCalls(ctx.npmShim.callsFile);
     assert.ok(
-      calls.every((call) => call.includes("--registry") && call.includes("https://registry.npmjs.org")),
+      calls.every(
+        (call) =>
+          call.includes("--registry") &&
+          call.includes("https://registry.npmjs.org"),
+      ),
       "every npm view carries the pinned registry",
     );
   } finally {
@@ -253,14 +282,17 @@ test("publishRelease: publish-then-verify when absent", async () => {
     const publish = calls.find((call) => call[0] === "publish");
     assert.ok(publish, "npm publish was invoked");
     assert.ok(
-      publish.includes("--registry") && publish.includes("https://registry.npmjs.org"),
+      publish.includes("--registry") &&
+        publish.includes("https://registry.npmjs.org"),
       "the publish carries the pinned registry",
     );
     assert.ok(publish.includes("--provenance"));
     assert.ok(publish.includes("--ignore-scripts"));
     assert.ok(publish.includes("--access") && publish.includes("public"));
     // The visibility wait then verified the published manifest.
-    const views = npmCalls(ctx.npmShim.callsFile).filter((c) => c[0] === "view");
+    const views = npmCalls(ctx.npmShim.callsFile).filter(
+      (c) => c[0] === "view",
+    );
     assert.ok(views.length >= 2, "view was called for E404 and visibility");
   } finally {
     ctx.fixture.cleanup();
@@ -276,7 +308,13 @@ test("publishRelease: verify-or-idempotent when present (no publish)", async () 
     writeFileSync(
       ctx.npmShim.stateFile,
       JSON.stringify({
-        views: { "fixture-consumer@1.2.2": { ...state, dist: { integrity: integrityOfFile(ctx.env.PACKAGE_TARBALL) }, gitHead: ctx.head } },
+        views: {
+          "fixture-consumer@1.2.2": {
+            ...state,
+            dist: { integrity: integrityOfFile(ctx.env.PACKAGE_TARBALL) },
+            gitHead: ctx.head,
+          },
+        },
         versions: [],
       }),
       "utf8",
@@ -319,8 +357,14 @@ test("publishRelease: refuses when a newer stable version exists", async () => {
         env: ctx.env,
       }),
     );
-    assert.match(err.message, /Checked: whether a newer stable version of fixture-consumer exists on the registry\./);
-    assert.match(err.message, /Found: a newer stable version is already published\./);
+    assert.match(
+      err.message,
+      /Checked: whether a newer stable version of fixture-consumer exists on the registry\./,
+    );
+    assert.match(
+      err.message,
+      /Found: a newer stable version is already published\./,
+    );
     assert.equal(
       npmCalls(ctx.npmShim.callsFile).some((call) => call[0] === "publish"),
       false,
@@ -444,7 +488,10 @@ test("pollGithubSignatureVerification: succeeds when verified, fails on timeout"
         delayMs: 1,
       }),
     );
-    assert.match(err.message, /Checked: that GitHub reports the tag signature verified\./);
+    assert.match(
+      err.message,
+      /Checked: that GitHub reports the tag signature verified\./,
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -468,7 +515,10 @@ test("verifyOnlyTag: a divergent (wrong-target, lightweight) remote tag is a har
         env: ctx.env,
       }),
     );
-    assert.match(err.message, /Checked: that v1\.2\.2 is an annotated tag object\./);
+    assert.match(
+      err.message,
+      /Checked: that v1\.2\.2 is an annotated tag object\./,
+    );
     assert.match(err.message, /Found: it is a commit object\./);
   } finally {
     ctx.fixture.cleanup();
@@ -490,7 +540,10 @@ test("release: refuses without the App token when tag-exists=false (before any m
     assert.match(problems.join("\n"), /Checked: NPM_RELEASE_FLOW_APP_TOKEN\./);
     // No tag was created.
     assert.equal(
-      remoteRefSha("refs/tags/v1.2.2", { cwd: ctx.fixture.consumer, env: ctx.env }),
+      remoteRefSha("refs/tags/v1.2.2", {
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+      }),
       null,
     );
   } finally {
@@ -550,7 +603,9 @@ test(
       );
       // The GitHub Release was created with --verify-tag.
       assert.ok(
-        readGhCalls(ctx.fixture).some((call) => call[1] === "create" && call.includes("--verify-tag")),
+        readGhCalls(ctx.fixture).some(
+          (call) => call[1] === "create" && call.includes("--verify-tag"),
+        ),
       );
     } finally {
       ctx.fixture.cleanup();

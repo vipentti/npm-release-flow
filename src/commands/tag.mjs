@@ -1,21 +1,17 @@
 /**
- * `tag` command (blueprint §8, §9 boundary 4): break-glass local recovery.
+ * `tag` command: break-glass local recovery.
  * Creates the annotated, signed tag `vX.Y.Z` (subject `Release vX.Y.Z`) on
  * the release-merge commit at `origin/main` and pushes it authenticated as
  * the release GitHub App. Deliberately separate from the automated path
  * (PR merge -> protected job -> tag + publish); `prepare`'s signed branch
  * commit is never the target.
  *
- * Completion semantics per §9 boundary 4: a valid remote tag -> fetch + full
+ * Completion semantics: a valid remote tag -> fetch + full
  * verify, exit 0 (no push); a divergent remote tag -> exit 1, manual; remote
  * absent with a valid local tag -> dry-run reports the push and `--execute`
  * pushes that tag; remote absent with no local tag -> create, verify, push,
  * verify. Refuses unsigned or lightweight tags.
  */
-
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   CliError,
@@ -36,9 +32,6 @@ import { parseStableVersion } from "../lib/versions.mjs";
 import { classifyRelease } from "../lib/release-state.mjs";
 import { mintAppToken } from "../lib/app-token.mjs";
 
-const moduleDir = dirname(fileURLToPath(import.meta.url));
-const kitRoot = resolve(moduleDir, "..", "..");
-
 /**
  * @param {string} version
  * @returns {RegExp} The documented release-merge message grammar:
@@ -52,7 +45,7 @@ function releaseMergePattern(version) {
 }
 
 /**
- * @typedef {Object} TagOptions
+ * @typedef {object} TagOptions
  * @property {string} [cwd] Repository root the command operates on.
  * @property {NodeJS.ProcessEnv} [env] Environment.
  * @property {(line: string) => void} [log] Plan-line sink.
@@ -123,7 +116,7 @@ function fingerprintPreflight(env, ctx) {
 /**
  * Resolve the release-merge candidate commit for a version: exactly one
  * matching release merge on `origin/main`'s first-parent history, classified
- * by §9 as a valid release for that version.
+ * as a valid release for that version.
  *
  * @param {string} version
  * @param {{ cwd: string, env: NodeJS.ProcessEnv }} ctx
@@ -158,7 +151,8 @@ function resolveReleaseMerge(version, ctx) {
       describeFailure({
         checked: `origin/main's first-parent history for a release merge of v${version}`,
         found: `${candidates.length} commits match the release-merge message grammar`,
-        correction: "resolve which merge is the release for this version, then tag it manually",
+        correction:
+          "resolve which merge is the release for this version, then tag it manually",
       }),
     );
   }
@@ -172,10 +166,7 @@ function resolveReleaseMerge(version, ctx) {
     afterPkg: showJson(candidate, "package.json", ctx),
     beforeLock: showJson(parent, "package-lock.json", ctx),
     afterLock: showJson(candidate, "package-lock.json", ctx),
-    changedFiles: git(
-      ["diff", "--name-only", parent, candidate],
-      ctx,
-    )
+    changedFiles: git(["diff", "--name-only", parent, candidate], ctx)
       .stdout.trim()
       .split("\n")
       .filter(Boolean),
@@ -253,7 +244,8 @@ function verifyLocalTag(version, candidate, fingerprint, ctx) {
   if (validsigs[0][1].toLowerCase() !== fingerprint) {
     throw new CliError(
       describeFailure({
-        checked: "that the signature's primary fingerprint matches NPM_RELEASE_FLOW_GPG_FINGERPRINT",
+        checked:
+          "that the signature's primary fingerprint matches NPM_RELEASE_FLOW_GPG_FINGERPRINT",
         found: validsigs[0][1],
         correction: "sign the tag with the configured release key",
       }),
@@ -284,7 +276,8 @@ async function appTokenForPush(ctx) {
       describeFailure({
         checked: "the repository identity via gh repo view",
         found: detail || "gh repo view failed",
-        correction: "check gh auth and that the current directory is a GitHub repository",
+        correction:
+          "check gh auth and that the current directory is a GitHub repository",
       }),
     );
   }
@@ -384,7 +377,10 @@ export async function tag(args, options = {}) {
   }
   const ctx = { cwd, env };
   const tagRef = `refs/tags/v${version}`;
-  /** @param {string} msg @returns {void} */
+  /**
+   * @param {string} msg
+   * @returns {void}
+   */
   const plan = (msg) => log(`${execute ? "[exec]" : "[dry-run]"} ${msg}`);
 
   plan(`Subcommand: tag`);
@@ -440,7 +436,9 @@ export async function tag(args, options = {}) {
     // Remote absent with a valid local tag: dry-run reports the push,
     // --execute pushes the existing tag with the App token.
     verifyLocalTag(version, candidate, fingerprint, ctx);
-    plan(`Would push the existing tag v${version} to origin (App-authenticated)`);
+    plan(
+      `Would push the existing tag v${version} to origin (App-authenticated)`,
+    );
     if (!execute) {
       return 0;
     }
@@ -475,7 +473,9 @@ export async function tag(args, options = {}) {
 
   // Remote absent with no local tag: create, verify, push, verify.
   plan(`Would create annotated signed tag v${version} on ${candidate}`);
-  plan(`Would verify the tag (object, target, subject, VALIDSIG ${fingerprint})`);
+  plan(
+    `Would verify the tag (object, target, subject, VALIDSIG ${fingerprint})`,
+  );
   plan("Would push the tag to origin (App-authenticated)");
   plan("Would verify the remote tag object equals the local one");
   if (!execute) {

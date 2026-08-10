@@ -1,5 +1,5 @@
 /**
- * Pack contract (blueprint §4): fully generic, no opt-out — exactly one
+ * Pack contract: fully generic, no opt-out — exactly one
  * tarball, safe filename, name matches the manifest, version matches the
  * release version, integrity metadata matches the bytes. This is the
  * artifact-identity backbone of the sha256 handoff.
@@ -35,12 +35,13 @@ export function sha256OfFile(filePath) {
 }
 
 /**
- * @typedef {Object} PackEntry The npm pack --json report entry for a package.
- * @property {string} filename
- * @property {string} name
- * @property {string} version
- * @property {string} integrity
- * @property {Array<{ path: string, size: number, mode: number }>} [files]
+ * @typedef {object} PackEntry The npm pack --json report entry for a package.
+ * @property {string} filename The tarball file name in the pack directory.
+ * @property {string} name The package name from the manifest.
+ * @property {string} version The packed version from the manifest.
+ * @property {string} integrity The integrity checksum reported by npm pack.
+ * @property {Array<{ path: string, size: number, mode: number }>} [files] The
+ *   entries inside the tarball, when the report includes them.
  */
 
 /**
@@ -62,11 +63,19 @@ export function packContractProblems({ packDir, report, manifest, version }) {
     return problems;
   }
   const filename = tarballs[0];
-  if (basename(filename) !== filename || filename.includes(sep) || filename.startsWith(".")) {
-    problems.push(`the tarball filename ${JSON.stringify(filename)} is not safe`);
+  if (
+    basename(filename) !== filename ||
+    filename.includes(sep) ||
+    filename.startsWith(".")
+  ) {
+    problems.push(
+      `the tarball filename ${JSON.stringify(filename)} is not safe`,
+    );
   }
   if (report.length !== 1) {
-    problems.push(`the pack report must contain exactly one entry; found ${report.length}`);
+    problems.push(
+      `the pack report must contain exactly one entry; found ${report.length}`,
+    );
     return problems;
   }
   const entry = report[0];
@@ -91,34 +100,7 @@ export function packContractProblems({ packDir, report, manifest, version }) {
 }
 
 /**
- * List the extracted tarball's files.
- *
- * @param {string} extractedDir
- * @returns {string[]} Relative paths, sorted.
- */
-export function extractedFilePaths(extractedDir) {
-  /**
-   * @param {string} dir
-   * @param {string} prefix
-   * @returns {string[]}
-   */
-  const walk = (dir, prefix) => {
-    const results = [];
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        results.push(...walk(join(dir, entry.name), rel));
-      } else {
-        results.push(rel);
-      }
-    }
-    return results;
-  };
-  return walk(extractedDir, "").sort();
-}
-
-/**
- * Bin-entry checks (§4): each declared binary exists in the tarball,
+ * Bin-entry checks: each declared binary exists in the tarball,
  * non-empty, with a shebang.
  *
  * @param {Record<string, any>} manifest
@@ -139,7 +121,9 @@ export function binEntryProblems(manifest, extractedDir) {
     try {
       const info = statSync(filePath);
       if (info.size === 0) {
-        problems.push(`the declared bin ${JSON.stringify(binName)} is empty in the tarball`);
+        problems.push(
+          `the declared bin ${JSON.stringify(binName)} is empty in the tarball`,
+        );
       }
     } catch {
       problems.push(
@@ -149,7 +133,9 @@ export function binEntryProblems(manifest, extractedDir) {
     }
     const head = readFileSync(filePath, "utf8");
     if (!head.startsWith("#!")) {
-      problems.push(`the declared bin ${JSON.stringify(binName)} has no shebang`);
+      problems.push(
+        `the declared bin ${JSON.stringify(binName)} has no shebang`,
+      );
     }
   }
   return problems;

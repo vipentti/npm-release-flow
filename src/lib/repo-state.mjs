@@ -1,14 +1,14 @@
 /**
  * Local git/gh state helpers shared by the CLI commands (prepare/tag/check).
- * All subprocess execution goes through the single spawn helper (blueprint
- * §8); this module only shapes git/gh invocations.
+ * All subprocess execution goes through the single spawn helper; this module
+ * only shapes git/gh invocations.
  */
 
 import { runSync, refProbeSync } from "./spawn.mjs";
 import { CommandError } from "./errors.mjs";
 
 /**
- * @typedef {Object} ExecOptions
+ * @typedef {object} ExecOptions
  * @property {string} [cwd] Working directory for the child.
  * @property {NodeJS.ProcessEnv} [env] Environment for the child.
  */

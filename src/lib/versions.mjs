@@ -1,6 +1,6 @@
 /**
  * Stable X.Y.Z version parsing, comparison, and strict-increase checks
- * (blueprint §9: "New or previous version not stable X.Y.Z" is a hard fail).
+ * ("New or previous version not stable X.Y.Z" is a hard fail).
  * Semver forbids leading zeros; prereleases and build metadata are not
  * stable versions.
  */

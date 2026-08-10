@@ -1,5 +1,5 @@
 /**
- * Artifact validation script (§9, T9): consumes the download directory and
+ * Artifact validation script: consumes the download directory and
  * fails unless it contains exactly the expected tarball and `pack.json`, the
  * tarball's sha256 equals the verify job's `package-sha256` output, the
  * pack.json contract holds (name/version match the tarball's manifest,
@@ -7,8 +7,14 @@
  * `PACKAGE_TARBALL` to `$GITHUB_ENV` for the release step.
  */
 
-import { appendFileSync, readdirSync, readFileSync, mkdirSync, rmSync } from "node:fs";
-import { resolve, join } from "node:path";
+import {
+  appendFileSync,
+  readdirSync,
+  readFileSync,
+  mkdirSync,
+  rmSync,
+} from "node:fs";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { describeFailure } from "./lib/errors.mjs";
@@ -21,7 +27,7 @@ import {
 } from "./lib/pack-contract.mjs";
 
 /**
- * @typedef {Object} ValidateArtifactOptions
+ * @typedef {object} ValidateArtifactOptions
  * @property {string} [cwd] Repository root (the consumer workspace).
  * @property {NodeJS.ProcessEnv} [env] Environment (PACKAGE_SHA256,
  *   ARTIFACT_DIR, GITHUB_ENV).
@@ -65,7 +71,8 @@ export async function validateArtifact(options = {}) {
           expectedSha256 === ""
             ? "the environment variable is not set"
             : `${JSON.stringify(expectedSha256)} is not a 64-character hex digest`,
-        correction: "wire PACKAGE_SHA256 from the verify job's package-sha256 output",
+        correction:
+          "wire PACKAGE_SHA256 from the verify job's package-sha256 output",
       }),
     );
   }
@@ -75,7 +82,8 @@ export async function validateArtifact(options = {}) {
       describeFailure({
         checked: "ARTIFACT_DIR",
         found: "the environment variable is not set",
-        correction: "wire ARTIFACT_DIR from the download step's download-path output",
+        correction:
+          "wire ARTIFACT_DIR from the download step's download-path output",
       }),
     );
   }
@@ -101,9 +109,7 @@ export async function validateArtifact(options = {}) {
       describeFailure({
         checked: "the artifact directory contents",
         found:
-          entries.length === 0
-            ? "the directory is empty"
-            : entries.join(", "),
+          entries.length === 0 ? "the directory is empty" : entries.join(", "),
         correction:
           "the artifact must contain exactly the uploaded tarball and pack.json",
       }),
@@ -118,16 +124,15 @@ export async function validateArtifact(options = {}) {
       describeFailure({
         checked: "that the downloaded tarball matches the verify job's sha256",
         found: `sha256 ${actualSha256.slice(0, 12)}... != expected ${expectedSha256.slice(0, 12)}...`,
-        correction: "re-run the workflow; the artifact was not produced by this release",
+        correction:
+          "re-run the workflow; the artifact was not produced by this release",
       }),
     );
   }
 
   let report;
   try {
-    report = JSON.parse(
-      readFileSync(join(artifactDir, "pack.json"), "utf8"),
-    );
+    report = JSON.parse(readFileSync(join(artifactDir, "pack.json"), "utf8"));
   } catch {
     return fail(
       describeFailure({
@@ -194,7 +199,8 @@ export async function validateArtifact(options = {}) {
         describeFailure({
           checked: "the declared bin entries in the tarball",
           found: binProblems.join("; "),
-          correction: "declare only binaries that ship in the tarball with a shebang",
+          correction:
+            "declare only binaries that ship in the tarball with a shebang",
         }),
       );
     }

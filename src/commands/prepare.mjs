@@ -1,6 +1,6 @@
 /**
- * `prepare` command (blueprint §8, §9 boundaries 1-2, concept-doc flow):
- * cut a release branch for `--version X.Y.Z` and open the release PR.
+ * `prepare` command: cut a release branch for `--version X.Y.Z` and open the
+ * release PR.
  *
  * Dry-run is the default; `--execute` performs the mutations. Rerun
  * semantics: an open or merged release PR for `release/vX.Y.Z` exits 2
@@ -79,7 +79,7 @@ export function compareUrlFromRepoUrl(repoUrl) {
 }
 
 /**
- * @typedef {Object} PrepareOptions
+ * @typedef {object} PrepareOptions
  * @property {string} [cwd] Repository root the command operates on.
  * @property {NodeJS.ProcessEnv} [env] Environment (PATH shims, GNUPGHOME...).
  * @property {(line: string) => void} [log] Plan-line sink (defaults to
@@ -129,7 +129,8 @@ function readChangelog(cwd) {
           err instanceof Error && "code" in err && err.code === "ENOENT"
             ? "CHANGELOG.md is missing"
             : "CHANGELOG.md could not be read",
-        correction: "commit a readable CHANGELOG.md with an [Unreleased] section",
+        correction:
+          "commit a readable CHANGELOG.md with an [Unreleased] section",
       }),
     );
   }
@@ -196,7 +197,10 @@ export async function prepare(args, options = {}) {
   const branchName = `release/v${version}`;
   const date = todayUtc();
 
-  /** @param {string} msg @returns {void} */
+  /**
+   * @param {string} msg
+   * @returns {void}
+   */
   const plan = (msg) => log(`${execute ? "[exec]" : "[dry-run]"} ${msg}`);
 
   plan(`Subcommand: prepare`);
@@ -237,9 +241,9 @@ export async function prepare(args, options = {}) {
   }
 
   // Release PR state is resolved BEFORE any strict-increase rejection and
-  // wins over matching local/remote branch presence (§9 boundaries 1-2).
+  // wins over matching local/remote branch presence.
   /** @type {Array<{ number: number, state: string, url: string }>} */
-  let prs = [];
+  let prs;
   try {
     const result = gh(
       [
@@ -258,7 +262,8 @@ export async function prepare(args, options = {}) {
     );
     prs = JSON.parse(result.stdout || "[]");
   } catch (err) {
-    const detail = err instanceof CommandError ? err.stderr.trim() : String(err);
+    const detail =
+      err instanceof CommandError ? err.stderr.trim() : String(err);
     throw new CliError(
       describeFailure({
         checked: "release PR state for " + branchName,
@@ -302,8 +307,7 @@ export async function prepare(args, options = {}) {
 
   // Only with no matching PR: version strict-increase, branches, tags.
   const pkg = readJson(cwd, "package.json");
-  const currentVersion =
-    typeof pkg.version === "string" ? pkg.version : null;
+  const currentVersion = typeof pkg.version === "string" ? pkg.version : null;
   if (currentVersion === null) {
     throw new CliError(
       describeFailure({
@@ -400,10 +404,14 @@ export async function prepare(args, options = {}) {
   plan(`Would set package-lock.json.version = ${version}`);
   plan(`Would set package-lock.json.packages[""].version = ${version}`);
   plan(`Would commit -S -m "release: ${version}" on branch ${branchName}`);
-  plan("Would verify the commit (message, single parent, signature, changed files)");
+  plan(
+    "Would verify the commit (message, single parent, signature, changed files)",
+  );
   plan(`Would push ${branchName} to origin`);
   plan("Would verify the remote ref equals the pushed SHA");
-  plan("Would create the release PR (base main) with the kit-version skew marker");
+  plan(
+    "Would create the release PR (base main) with the kit-version skew marker",
+  );
   plan("Would return to main");
 
   if (!execute) {
@@ -414,8 +422,6 @@ export async function prepare(args, options = {}) {
 
   /** @type {string[]} */
   const created = [];
-  /** @type {string[]} */
-  const manual = [];
 
   try {
     const cut = cutChangelog(changelog, {
@@ -467,7 +473,11 @@ export async function prepare(args, options = {}) {
         describeFailure({
           checked: "the release state after the version bump",
           found:
-            [changelogCheck.ok ? null : changelogCheck.reason, lockMismatch, identityMismatch]
+            [
+              changelogCheck.ok ? null : changelogCheck.reason,
+              lockMismatch,
+              identityMismatch,
+            ]
               .filter(Boolean)
               .join("; ") || "unknown",
           correction: "fix the control files, then rerun",
@@ -504,7 +514,10 @@ export async function prepare(args, options = {}) {
     created.push(`signed commit "release: ${version}"`);
 
     // Post-commit verification: message, one parent, signature, changed set.
-    const message = git(["log", "-1", "--format=%s"], { cwd, env }).stdout.trim();
+    const message = git(["log", "-1", "--format=%s"], {
+      cwd,
+      env,
+    }).stdout.trim();
     if (message !== `release: ${version}`) {
       throw mutationError(
         "the release commit message",
@@ -547,7 +560,9 @@ export async function prepare(args, options = {}) {
     if (!isReleaseDiff(changedFiles)) {
       throw mutationError(
         "that the release commit changed exactly the three control files",
-        changedFiles.length === 0 ? "no files changed" : changedFiles.join(", "),
+        changedFiles.length === 0
+          ? "no files changed"
+          : changedFiles.join(", "),
         `a release commit may only change ${RELEASE_FILES.join(", ")}`,
         created.join(", ") || "nothing",
         "verify and fix the commit manually",
@@ -567,7 +582,10 @@ export async function prepare(args, options = {}) {
     created.push(`remote ref refs/heads/${branchName}`);
 
     const branchSha = localRefSha(`refs/heads/${branchName}`, { cwd, env });
-    const verifiedRemote = remoteRefSha(`refs/heads/${branchName}`, { cwd, env });
+    const verifiedRemote = remoteRefSha(`refs/heads/${branchName}`, {
+      cwd,
+      env,
+    });
     if (branchSha === null || verifiedRemote !== branchSha) {
       throw mutationError(
         "that the remote release branch equals the pushed SHA",
@@ -600,7 +618,8 @@ export async function prepare(args, options = {}) {
       );
       prUrl = pr.stdout.trim();
     } catch (err) {
-      const detail = err instanceof CommandError ? err.stderr.trim() : String(err);
+      const detail =
+        err instanceof CommandError ? err.stderr.trim() : String(err);
       throw mutationError(
         "creating the release PR",
         detail || "gh pr create failed",
@@ -627,11 +646,14 @@ export async function prepare(args, options = {}) {
       describeFailure({
         checked: "the prepare mutation sequence",
         found: err instanceof Error ? err.message : String(err),
-        correction: "inspect the repository state, resolve, then rerun from the start",
+        correction:
+          "inspect the repository state, resolve, then rerun from the start",
       }),
     );
   }
 
-  plan(`Created: branch, signed commit, pushed ref, release PR; returned to main`);
+  plan(
+    `Created: branch, signed commit, pushed ref, release PR; returned to main`,
+  );
   return 0;
 }

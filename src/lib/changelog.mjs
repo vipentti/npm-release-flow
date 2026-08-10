@@ -1,5 +1,5 @@
 /**
- * Keep a Changelog grammar (blueprint §4, Planlet's grammar verbatim):
+ * Keep a Changelog grammar:
  * `## [Unreleased]`, `## [x.y.z] - date`, link references, compare-URL
  * rewrite, and version-section extraction for release notes.
  */
@@ -33,7 +33,7 @@ export function todayUtc() {
 }
 
 /**
- * @typedef {Object} ChangelogSection
+ * @typedef {object} ChangelogSection
  * @property {string} label Section label (e.g. "Unreleased" or "1.2.3").
  * @property {string} suffix Text after the label on the heading line
  *   (e.g. " - 2026-08-01"), untrimmed.
@@ -105,7 +105,7 @@ export function hasNonEmptyNotes(body) {
 }
 
 /**
- * Whether the changelog declares the release-intent signal (§4 mandatory
+ * Whether the changelog declares the release-intent signal (a mandatory
  * consumer prerequisite): exactly one bare `## [Unreleased]` heading (no
  * date or trailing text).
  *
@@ -113,7 +113,9 @@ export function hasNonEmptyNotes(body) {
  * @returns {boolean}
  */
 export function hasUnreleasedSection(changelog) {
-  const unreleased = sections(changelog).filter((s) => s.label === "Unreleased");
+  const unreleased = sections(changelog).filter(
+    (s) => s.label === "Unreleased",
+  );
   return unreleased.length === 1 && unreleased[0].suffix === "";
 }
 
@@ -125,7 +127,9 @@ export function hasUnreleasedSection(changelog) {
  * @returns {{ ok: boolean, reason?: string }}
  */
 export function unreleasedState(changelog) {
-  const unreleased = sections(changelog).filter((s) => s.label === "Unreleased");
+  const unreleased = sections(changelog).filter(
+    (s) => s.label === "Unreleased",
+  );
   if (unreleased.length !== 1) {
     return {
       ok: false,
@@ -148,8 +152,8 @@ export function unreleasedState(changelog) {
 }
 
 /**
- * Historical release-changelog verification (blueprint §9: "Changelog not a
- * valid released version"): exactly one bare `## [Unreleased]` section that
+ * Historical release-changelog verification ("Changelog not a valid released
+ * version"): exactly one bare `## [Unreleased]` section that
  * is empty, exactly one `## [x.y.z] - date` section for `version` with a real
  * calendar date and non-empty notes, and a link reference for every section
  * label.
@@ -278,7 +282,10 @@ export function cutChangelog(
   const bodyMatch = unreleasedSection.match(/^## \[Unreleased\]\n\n([\s\S]*)$/);
   const unreleasedBody = bodyMatch ? bodyMatch[1].trim() : "";
   if (!unreleasedBody) {
-    return { ok: false, reason: "[Unreleased] section is empty; nothing to release" };
+    return {
+      ok: false,
+      reason: "[Unreleased] section is empty; nothing to release",
+    };
   }
   const after = boundary === -1 ? "" : rest.slice(boundary).replace(/^\n+/, "");
   const before = text.slice(0, unreleasedIdx);
@@ -297,8 +304,8 @@ export function cutChangelog(
 }
 
 /**
- * Release-notes body for a version section (the GitHub Release notes source,
- * §9 boundary 6), or null when the section is absent.
+ * Release-notes body for a version section (the GitHub Release notes source),
+ * or null when the section is absent.
  *
  * @param {string} changelog
  * @param {string} version

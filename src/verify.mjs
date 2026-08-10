@@ -1,5 +1,5 @@
 /**
- * Verify job script (§5, §9 boundary 5 prerequisites): runs the consumer's
+ * Verify job script: runs the consumer's
  * verification and produces the sha256-handoff artifact. Env-driven:
  * `VERSION` (from detect), `CALLER_REPOSITORY` (self-host detection),
  * `GH_TOKEN` (npm/auth context). Executes consumer-controlled code (`npm ci`,
@@ -7,11 +7,18 @@
  *
  * Produces `.npm-release-flow-pack/`: exactly one tarball plus `pack.json`
  * (the exact `npm pack --json` report), validates the pack contract,
- * exercises the generic smoke test, enforces the §10 pin agreement, and
+ * exercises the generic smoke test, enforces the pin agreement, and
  * writes `package-sha256` to `GITHUB_OUTPUT`.
  */
 
-import { mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync, readdirSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  appendFileSync,
+  readdirSync,
+} from "node:fs";
 import { basename, resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -30,7 +37,7 @@ const PACK_DIR = ".npm-release-flow-pack";
 const KIT_PACKAGE = "@vipentti/npm-release-flow";
 
 /**
- * @typedef {Object} VerifyOptions
+ * @typedef {object} VerifyOptions
  * @property {string} [cwd] Repository root (the consumer tree).
  * @property {NodeJS.ProcessEnv} [env] Environment (VERSION,
  *   CALLER_REPOSITORY, GH_TOKEN, GITHUB_OUTPUT...).
@@ -60,7 +67,7 @@ export function kitRepository(manifest) {
 }
 
 /**
- * The §10 pin agreement: for a normal consumer, the installed kit
+ * The pin agreement: for a normal consumer, the installed kit
  * devDependency copy must equal the kit checkout's version. For the kit
  * itself (self-host), no self devDependency is required; pin agreement is
  * proven by the detect marker check.
@@ -75,7 +82,7 @@ function skewProblem(cwd, manifest, callerRepository) {
   if (selfHost) {
     return null;
   }
-  let checkoutVersion = null;
+  let checkoutVersion;
   try {
     const kitManifest = JSON.parse(
       readFileSync(resolve(cwd, ".npm-release-flow", "package.json"), "utf8"),
@@ -93,7 +100,7 @@ function skewProblem(cwd, manifest, callerRepository) {
         "check out the kit at the pinned workflow SHA into .npm-release-flow",
     });
   }
-  let installedVersion = null;
+  let installedVersion;
   try {
     const installed = JSON.parse(
       readFileSync(
@@ -159,8 +166,8 @@ export async function verify(options = {}) {
     );
   }
 
-  // Defensive re-validation of the §4 mandatory checks (enforcement lives in
-  // the detect job).
+  // Defensive re-validation of the mandatory consumer checks (enforcement
+  // lives in the detect job).
   const prerequisite = mandatoryPrerequisiteProblem({ cwd, env });
   if (prerequisite !== null) {
     return fail(prerequisite);
@@ -219,7 +226,10 @@ export async function verify(options = {}) {
       }),
     );
   }
-  if (typeof manifest.scripts?.build === "string" && manifest.scripts.build !== "") {
+  if (
+    typeof manifest.scripts?.build === "string" &&
+    manifest.scripts.build !== ""
+  ) {
     try {
       runSync("npm", ["run", "build"], { cwd, env });
     } catch (err) {
@@ -274,7 +284,9 @@ export async function verify(options = {}) {
 
   const contractProblems = packContractProblems({
     packDir,
-    report: /** @type {import("./lib/pack-contract.mjs").PackEntry[]} */ (reportEntries),
+    report: /** @type {import("./lib/pack-contract.mjs").PackEntry[]} */ (
+      reportEntries
+    ),
     manifest,
     version,
   });
@@ -283,11 +295,14 @@ export async function verify(options = {}) {
       describeFailure({
         checked: "the pack contract",
         found: contractProblems.join("; "),
-        correction: "the tarball must match the manifest, version, and its own report",
+        correction:
+          "the tarball must match the manifest, version, and its own report",
       }),
     );
   }
-  const tarball = readdirSync(packDir).filter((name) => name.endsWith(".tgz"))[0];
+  const tarball = readdirSync(packDir).filter((name) =>
+    name.endsWith(".tgz"),
+  )[0];
 
   // --- Bin entries and generic smoke test from the packed tarball ---
 
@@ -308,7 +323,8 @@ export async function verify(options = {}) {
         describeFailure({
           checked: "the declared bin entries in the tarball",
           found: binProblems.join("; "),
-          correction: "declare only binaries that ship in the tarball with a shebang",
+          correction:
+            "declare only binaries that ship in the tarball with a shebang",
         }),
       );
     }
@@ -330,7 +346,11 @@ export async function verify(options = {}) {
   mkdirSync(smokeDir, { recursive: true });
   writeFileSync(
     join(smokeDir, "package.json"),
-    JSON.stringify({ name: "smoke-project", version: "0.0.0", private: true }, null, 2) + "\n",
+    JSON.stringify(
+      { name: "smoke-project", version: "0.0.0", private: true },
+      null,
+      2,
+    ) + "\n",
     "utf8",
   );
   try {
@@ -358,8 +378,7 @@ export async function verify(options = {}) {
         return fail(
           describeFailure({
             checked: `that the declared bin ${JSON.stringify(binName)} resolves after installing the tarball`,
-            found:
-              err instanceof Error ? err.message : "the bin did not run",
+            found: err instanceof Error ? err.message : "the bin did not run",
             correction: "declare only binaries that resolve from an install",
           }),
         );
@@ -370,7 +389,8 @@ export async function verify(options = {}) {
       err instanceof CommandError ? err.stderr.trim() : String(err);
     return fail(
       describeFailure({
-        checked: "the generic smoke install (npm i <tgz> --ignore-scripts --omit=peer)",
+        checked:
+          "the generic smoke install (npm i <tgz> --ignore-scripts --omit=peer)",
         found: detail || "the smoke install failed",
         correction: "the tarball must install into a fresh project",
       }),
@@ -379,7 +399,7 @@ export async function verify(options = {}) {
     rmSync(smokeDir, { recursive: true, force: true });
   }
 
-  // --- §10 pin agreement ---
+  // --- Pin agreement ---
 
   const callerRepository = env.CALLER_REPOSITORY ?? "";
   const skew = skewProblem(cwd, manifest, callerRepository);

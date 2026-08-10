@@ -17,8 +17,15 @@ import { createSign } from "node:crypto";
 export function createAppJwt({ appId, privateKey, now }) {
   const nowSeconds = now ?? Math.floor(Date.now() / 1000);
   const header = { alg: "RS256", typ: "JWT" };
-  const payload = { iat: nowSeconds, exp: nowSeconds + 600, iss: String(appId) };
-  /** @param {Record<string, unknown>} value @returns {string} */
+  const payload = {
+    iat: nowSeconds,
+    exp: nowSeconds + 600,
+    iss: String(appId),
+  };
+  /**
+   * @param {Record<string, unknown>} value
+   * @returns {string}
+   */
   const base64Url = (value) =>
     Buffer.from(JSON.stringify(value)).toString("base64url");
   const signingInput = `${base64Url(header)}.${base64Url(payload)}`;
@@ -31,13 +38,14 @@ export function createAppJwt({ appId, privateKey, now }) {
   } catch (err) {
     throw new Error(
       `could not sign the App JWT with the private key: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
   return `${signingInput}.${signature}`;
 }
 
 /**
- * @typedef {Object} MintOptions
+ * @typedef {object} MintOptions
  * @property {string} appId The GitHub App ID (from the repository variable).
  * @property {string} privateKey The App's PEM private key.
  * @property {string} owner Repository owner.
@@ -78,6 +86,7 @@ export async function mintAppToken({
   } catch (err) {
     throw new Error(
       `could not resolve the App installation for ${owner}/${repo}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
   if (!installResponse.ok) {
@@ -85,7 +94,9 @@ export async function mintAppToken({
       `could not resolve the App installation for ${owner}/${repo}: API returned ${installResponse.status}; is the App installed on the repository?`,
     );
   }
-  const installation = /** @type {{ id: number }} */ (await installResponse.json());
+  const installation = /** @type {{ id: number }} */ (
+    await installResponse.json()
+  );
 
   let tokenResponse;
   try {
@@ -96,6 +107,7 @@ export async function mintAppToken({
   } catch (err) {
     throw new Error(
       `could not mint the installation token: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
   if (!tokenResponse.ok) {

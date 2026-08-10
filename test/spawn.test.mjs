@@ -59,12 +59,18 @@ test("exit status 2 and another non-zero status survive and are distinguishable"
 
 test(
   "signal is captured when the process is terminated",
-  { skip: process.platform === "win32" && "signals do not propagate through cmd" },
+  {
+    skip:
+      process.platform === "win32" && "signals do not propagate through cmd",
+  },
   () => {
     assert.throws(
-      () => runSync(node, code("setInterval(() => {}, 1000)"), { timeout: 200 }),
+      () =>
+        runSync(node, code("setInterval(() => {}, 1000)"), { timeout: 200 }),
       (err) =>
-        err instanceof CommandError && err.signal === "SIGTERM" && err.status === null,
+        err instanceof CommandError &&
+        err.signal === "SIGTERM" &&
+        err.status === null,
     );
   },
 );
@@ -84,7 +90,8 @@ test(
           ),
           { timeout: 200 },
         ),
-      (err) => err instanceof CommandError && err.signal !== null && err.status !== 0,
+      (err) =>
+        err instanceof CommandError && err.signal !== null && err.status !== 0,
     );
   },
 );
@@ -110,7 +117,10 @@ test("win32Shell: win32 spawns through the shell, POSIX spawns argv directly", (
 
 test("win32CommandLine quotes arguments with spaces or metacharacters", () => {
   // No quoting needed.
-  assert.equal(win32CommandLine("git", ["status", "--porcelain"]), '"git status --porcelain"');
+  assert.equal(
+    win32CommandLine("git", ["status", "--porcelain"]),
+    '"git status --porcelain"',
+  );
   // Space-containing argument is quoted so it survives the shell.
   assert.equal(
     win32CommandLine("git", ["commit", "-m", "release: 1.2.3"]),
@@ -150,9 +160,15 @@ test("runAsync rejects with CommandError carrying status and stderr", async () =
 });
 
 test("runSync writes input to the child's stdin", () => {
-  const result = runSync(node, code("let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => { console.log('got:' + d); });"), {
-    input: "hello stdin",
-  });
+  const result = runSync(
+    node,
+    code(
+      "let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => { console.log('got:' + d); });",
+    ),
+    {
+      input: "hello stdin",
+    },
+  );
   assert.equal(result.status, 0);
   assert.equal(result.stdout, "got:hello stdin\n");
 });
@@ -163,7 +179,10 @@ test(
   () => {
     const dir = mkdtempSync(join(tmpdir(), "npmrf-spawn-"));
     try {
-      writeFileSync(join(dir, "stub-probe.cmd"), "@echo off\r\necho stub-ok\r\n");
+      writeFileSync(
+        join(dir, "stub-probe.cmd"),
+        "@echo off\r\necho stub-ok\r\n",
+      );
       const env = { ...process.env, PATH: dir + ";" + process.env.PATH };
       const result = runSync("stub-probe", [], { env });
       assert.equal(result.status, 0);

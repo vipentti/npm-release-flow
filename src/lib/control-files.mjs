@@ -1,6 +1,6 @@
 /**
  * Release control files: the fixed three-file release-diff allowlist and the
- * manifest/lockfile identity checks (blueprint §4, §9).
+ * manifest/lockfile identity checks.
  */
 
 import { readFileSync } from "node:fs";
@@ -11,14 +11,13 @@ import { CommandError, describeFailure } from "./errors.mjs";
 import { hasUnreleasedSection } from "./changelog.mjs";
 
 /**
- * @typedef {Object} ControlCtx
- * @property {string} cwd
- * @property {NodeJS.ProcessEnv} [env]
+ * @typedef {object} ControlCtx
+ * @property {string} cwd The directory the git commands run in.
+ * @property {NodeJS.ProcessEnv} [env] The environment for the git commands.
  */
 
 /**
- * The release-diff allowlist, fixed at exactly these three files
- * (blueprint §4: "Release-diff allowlist, fixed at exactly three files").
+ * The release-diff allowlist, fixed at exactly these three files.
  * Kept sorted for diff comparison.
  * @type {readonly string[]}
  */
@@ -188,7 +187,7 @@ function tryReadJson(cwd, name) {
 }
 
 /**
- * Validate the §4 mandatory consumer prerequisites (CHANGELOG.md with a
+ * Validate the mandatory consumer prerequisites (CHANGELOG.md with a
  * `## [Unreleased]` section, a `release:verify` script, a committed
  * lockfile). Missing prerequisites fail before any release verdict; the
  * detect job enforces them, the verify job re-validates defensively.

@@ -1,5 +1,5 @@
 /**
- * The single subprocess helper (blueprint §8): sync and async variants that
+ * The single subprocess helper: sync and async variants that
  * capture stdout/stderr, resolve Windows `.cmd` wrappers here once (win32
  * spawns through the shell per PATHEXT, POSIX spawns argv directly), and raise
  * a typed `CommandError` carrying stdout/stderr plus the numeric exit status
@@ -64,7 +64,7 @@ export function win32CommandLine(command, args) {
 }
 
 /**
- * @typedef {Object} SpawnOptions
+ * @typedef {object} SpawnOptions
  * @property {string} [cwd] Working directory for the child.
  * @property {NodeJS.ProcessEnv} [env] Environment for the child.
  * @property {number} [maxBuffer] Largest amount of captured output in bytes.
@@ -74,7 +74,7 @@ export function win32CommandLine(command, args) {
  */
 
 /**
- * @typedef {Object} SpawnResult
+ * @typedef {object} SpawnResult
  * @property {number|null} status Numeric exit status, or null when the child
  *   was terminated by a signal.
  * @property {string} stdout Captured standard output.
@@ -162,15 +162,16 @@ export function runAsync(command, args = [], options = {}) {
   /** @type {Promise<SpawnResult>} */
   const promise = new Promise((resolve, reject) => {
     const vector = spawnVector(command, args);
-    const child = /** @type {import("node:child_process").ChildProcessByStdio<null, import("node:stream").Readable, import("node:stream").Readable>} */ (
-      spawn(vector.file, vector.args, {
-        cwd: options.cwd,
-        env: options.env,
-        timeout: options.timeout,
-        windowsVerbatimArguments: vector.windowsVerbatimArguments,
-        stdio: ["ignore", "pipe", "pipe"],
-      })
-    );
+    const child =
+      /** @type {import("node:child_process").ChildProcessByStdio<null, import("node:stream").Readable, import("node:stream").Readable>} */ (
+        spawn(vector.file, vector.args, {
+          cwd: options.cwd,
+          env: options.env,
+          timeout: options.timeout,
+          windowsVerbatimArguments: vector.windowsVerbatimArguments,
+          stdio: ["ignore", "pipe", "pipe"],
+        })
+      );
     let stdout = "";
     let stderr = "";
     const out = child.stdout;

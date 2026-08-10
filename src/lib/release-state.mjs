@@ -1,5 +1,5 @@
 /**
- * §9 release-state enumeration classification over a push diff. Ambiguity
+ * Release-state enumeration classification over a push diff. Ambiguity
  * fails closed (hard fail) and is never degraded to an ordinary push; one
  * deliberate non-ambiguity: a tag already pointing at the release commit is
  * still a valid release (it routes the protected job to the verify-only
@@ -19,7 +19,7 @@ import { parseStableVersion, isStrictIncrease } from "./versions.mjs";
 import { validReleasedChangelog } from "./changelog.mjs";
 
 /**
- * @typedef {Object} ReleaseStateInput
+ * @typedef {object} ReleaseStateInput
  * @property {boolean} beforeResolved Whether the `before` SHA is present,
  *   well-formed, non-zero, and resolves to a commit.
  * @property {boolean} headMatchesTrigger Whether HEAD equals the triggering
@@ -41,8 +41,9 @@ import { validReleasedChangelog } from "./changelog.mjs";
  */
 
 /**
- * @typedef {Object} ReleaseVerdict
- * @property {"ordinary" | "valid" | "invalid"} verdict
+ * @typedef {object} ReleaseVerdict
+ * @property {"ordinary" | "valid" | "invalid"} verdict The classification of
+ *   the release: ordinary, valid, or invalid.
  * @property {string | null} version The released version when `valid`.
  * @property {string[]} reasons Error-content messages when `invalid`
  *   (checked / found / correction).
@@ -63,7 +64,7 @@ function invalid(checked, found, correction) {
 }
 
 /**
- * Classify a push per the §9 enumeration table.
+ * Classify a push per the release-state enumeration.
  *
  * @param {ReleaseStateInput} input
  * @returns {ReleaseVerdict}
@@ -95,7 +96,11 @@ export function classifyRelease(input) {
     );
   }
   // Version unchanged: ordinary push, whatever files changed.
-  if (beforeVersion !== null && afterVersion !== null && beforeVersion === afterVersion) {
+  if (
+    beforeVersion !== null &&
+    afterVersion !== null &&
+    beforeVersion === afterVersion
+  ) {
     return { verdict: "ordinary", version: null, reasons: [] };
   }
 
@@ -202,7 +207,10 @@ export function classifyRelease(input) {
       "commit a readable CHANGELOG.md",
     );
   }
-  const changelogCheck = validReleasedChangelog(input.changelog, releaseVersion);
+  const changelogCheck = validReleasedChangelog(
+    input.changelog,
+    releaseVersion,
+  );
   if (!changelogCheck.ok) {
     return invalid(
       "the changelog as a valid released version",

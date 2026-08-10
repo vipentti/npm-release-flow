@@ -1,7 +1,7 @@
 /**
- * Programmatic entry point (blueprint §3: the package is both the CLI and the
- * workflow's logic). Re-exports the CLI `main` plus the shared libs so
- * consumers and the job scripts import the same code.
+ * Programmatic entry point: the package is both the CLI and the workflow's
+ * logic. Re-exports the CLI `main` plus the shared libs so consumers and the
+ * job scripts import the same code.
  */
 
 export { main } from "../bin/npm-release-flow.mjs";

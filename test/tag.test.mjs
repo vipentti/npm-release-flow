@@ -46,6 +46,10 @@ async function expectCliError(promise, expectedExitCode) {
 
 /**
  * Fixture with a release merge on main and the tag signing material.
+ * @param root0
+ * @param root0.version
+ * @param root0.prNumber
+ * @param root0.merge
  */
 function tagFixture({ version = "1.2.3", prNumber = 12, merge = true } = {}) {
   const fixture = createFixtureRepo();
@@ -61,11 +65,17 @@ function tagFixture({ version = "1.2.3", prNumber = 12, merge = true } = {}) {
   return { fixture, env, signing, mergeSha };
 }
 
-function withAppMaterial(fixture, env, { appId = "12345", privateKey = "fixture-pem" } = {}) {
+function withAppMaterial(
+  fixture,
+  env,
+  { appId = "12345", privateKey = "fixture-pem" } = {},
+) {
   setGhRepoState(fixture, { repo: "example/fixture-consumer", appId });
   return {
     ...env,
-    ...(privateKey === null ? {} : { NPM_RELEASE_FLOW_APP_PRIVATE_KEY: privateKey }),
+    ...(privateKey === null
+      ? {}
+      : { NPM_RELEASE_FLOW_APP_PRIVATE_KEY: privateKey }),
   };
 }
 
@@ -111,7 +121,10 @@ test("tag refuses a non-stable version", async () => {
 test("tag refuses a missing NPM_RELEASE_FLOW_GPG_FINGERPRINT", async () => {
   const fixture = createFixtureRepo();
   try {
-    const env = { ...envWithShim(fixture), GNUPGHOME: join(fixture.base, "home") };
+    const env = {
+      ...envWithShim(fixture),
+      GNUPGHOME: join(fixture.base, "home"),
+    };
     const err = await expectCliError(
       tag({ version: "1.2.3", execute: false }, { cwd: fixture.consumer, env }),
       ExitCode.ERROR,
@@ -155,8 +168,14 @@ test("tag refuses when the fingerprint's secret key is not in the keyring", asyn
       tag({ version: "1.2.3", execute: false }, { cwd: fixture.consumer, env }),
       ExitCode.ERROR,
     );
-    assert.match(err.message, /Checked: that a usable secret key for a{40} exists in the GPG keyring\./);
-    assert.match(err.message, /Correction: import or restore the release secret key/);
+    assert.match(
+      err.message,
+      /Checked: that a usable secret key for a{40} exists in the GPG keyring\./,
+    );
+    assert.match(
+      err.message,
+      /Correction: import or restore the release secret key/,
+    );
   } finally {
     fixture.cleanup();
   }
@@ -172,11 +191,20 @@ test("tag dry-run resolves the release merge, prints the plan, and mutates nothi
     );
     assert.equal(code, 0);
     const planText = lines.join("\n");
-    assert.match(planText, /Signing preflight: secret key for [0-9a-fA-F]{40} available/);
+    assert.match(
+      planText,
+      /Signing preflight: secret key for [0-9a-fA-F]{40} available/,
+    );
     assert.match(planText, new RegExp(`Release-merge commit: ${mergeSha}`));
     assert.match(planText, /Would create annotated signed tag v1\.2\.3 on /);
-    assert.match(planText, /Would push the tag to origin \(App-authenticated\)/);
-    assert.equal(localObjectSha("refs/tags/v1.2.3", { cwd: fixture.consumer }), null);
+    assert.match(
+      planText,
+      /Would push the tag to origin \(App-authenticated\)/,
+    );
+    assert.equal(
+      localObjectSha("refs/tags/v1.2.3", { cwd: fixture.consumer }),
+      null,
+    );
     assert.equal(isCleanWorktree({ cwd: fixture.consumer }), true);
   } finally {
     fixture.cleanup();
@@ -196,7 +224,10 @@ test("tag refuses when no release merge matches (zero candidates)", async () => 
       tag({ version: "9.9.9", execute: false }, { cwd: fixture.consumer, env }),
       ExitCode.ERROR,
     );
-    assert.match(err.message, /Found: no commit matches the release-merge message grammar\./);
+    assert.match(
+      err.message,
+      /Found: no commit matches the release-merge message grammar\./,
+    );
   } finally {
     fixture.cleanup();
   }
@@ -216,9 +247,7 @@ test("tag refuses when multiple release merges match", async () => {
     // the message) makes two candidates for the v1.2.3 pattern.
     const branch = "release/v1.2.4";
     git(["checkout", "-b", branch], { cwd: fixture.consumer, env });
-    const pkg = JSON.parse(
-      readConsumerFile(fixture, "package.json"),
-    );
+    const pkg = JSON.parse(readConsumerFile(fixture, "package.json"));
     pkg.version = "1.2.4";
     writeFileSync(
       join(fixture.consumer, "package.json"),
@@ -244,7 +273,10 @@ test("tag refuses when multiple release merges match", async () => {
       tag({ version: "1.2.3", execute: false }, { cwd: fixture.consumer, env }),
       ExitCode.ERROR,
     );
-    assert.match(err.message, /Found: 2 commits match the release-merge message grammar\./);
+    assert.match(
+      err.message,
+      /Found: 2 commits match the release-merge message grammar\./,
+    );
   } finally {
     fixture.cleanup();
   }
@@ -283,7 +315,10 @@ test("tag refuses a release-like merge whose diff is not a valid release", async
       tag({ version: "1.2.3", execute: false }, { cwd: fixture.consumer, env }),
       ExitCode.ERROR,
     );
-    assert.match(err.message, /Checked: the release merge of v1\.2\.3 as a valid release\./);
+    assert.match(
+      err.message,
+      /Checked: the release merge of v1\.2\.3 as a valid release\./,
+    );
   } finally {
     fixture.cleanup();
   }
@@ -302,7 +337,10 @@ test("tag resolves the release merge after later ordinary commits on main", asyn
       { cwd: fixture.consumer, env, log: (line) => lines.push(line) },
     );
     assert.equal(code, 0);
-    assert.match(lines.join("\n"), new RegExp(`Release-merge commit: ${mergeSha}`));
+    assert.match(
+      lines.join("\n"),
+      new RegExp(`Release-merge commit: ${mergeSha}`),
+    );
   } finally {
     fixture.cleanup();
   }
@@ -353,7 +391,8 @@ test(
     const blockedPath = appEnv.PATH;
     const runEnv = {
       ...appEnv,
-      PATH: recorder.dir + (process.platform === "win32" ? ";" : ":") + blockedPath,
+      PATH:
+        recorder.dir + (process.platform === "win32" ? ";" : ":") + blockedPath,
     };
     const restore = stubAppToken();
     try {
@@ -367,21 +406,40 @@ test(
       assert.match(lines.join("\n"), /Pushed v1\.2\.3; remote object verified/);
 
       // The local tag exists, is annotated, points at the merge, and verifies.
-      assert.equal(localObjectSha("refs/tags/v1.2.3", { cwd: fixture.consumer }) !== null, true);
       assert.equal(
-        git(["rev-parse", "refs/tags/v1.2.3^{commit}"], { cwd: fixture.consumer }).stdout.trim(),
+        localObjectSha("refs/tags/v1.2.3", { cwd: fixture.consumer }) !== null,
+        true,
+      );
+      assert.equal(
+        git(["rev-parse", "refs/tags/v1.2.3^{commit}"], {
+          cwd: fixture.consumer,
+        }).stdout.trim(),
         mergeSha,
       );
       // The remote tag equals the local tag object.
-      const remoteSha = remoteRefSha("refs/tags/v1.2.3", { cwd: fixture.consumer, env });
-      assert.equal(remoteSha, localObjectSha("refs/tags/v1.2.3", { cwd: fixture.consumer }));
+      const remoteSha = remoteRefSha("refs/tags/v1.2.3", {
+        cwd: fixture.consumer,
+        env,
+      });
+      assert.equal(
+        remoteSha,
+        localObjectSha("refs/tags/v1.2.3", { cwd: fixture.consumer }),
+      );
       // The push carried the App token in the extraheader.
       const calls = gitCalls(recorder.callsFile);
       const push = calls.find((call) => call.includes("push"));
       assert.ok(push, "a git push was recorded");
-      const extraheaderIndex = push.indexOf("http.extraheader=Authorization: Bearer fixture-app-token");
-      assert.ok(extraheaderIndex !== -1, "push carried the App token extraheader");
-      assert.ok(push.indexOf("-c") < extraheaderIndex, "-c precedes the extraheader");
+      const extraheaderIndex = push.indexOf(
+        "http.extraheader=Authorization: Bearer fixture-app-token",
+      );
+      assert.ok(
+        extraheaderIndex !== -1,
+        "push carried the App token extraheader",
+      );
+      assert.ok(
+        push.indexOf("-c") < extraheaderIndex,
+        "-c precedes the extraheader",
+      );
     } finally {
       restore();
       fixture.cleanup();
@@ -406,7 +464,10 @@ test(
       const recorder = createGitRecorder(fixture.base);
       const runEnv = {
         ...firstEnv,
-        PATH: recorder.dir + (process.platform === "win32" ? ";" : ":") + firstEnv.PATH,
+        PATH:
+          recorder.dir +
+          (process.platform === "win32" ? ";" : ":") +
+          firstEnv.PATH,
       };
       const lines = [];
       const code = await tag(
@@ -437,7 +498,8 @@ test(
     const appEnv = withAppMaterial(fixture, env);
     const runEnv = {
       ...appEnv,
-      PATH: recorder.dir + (process.platform === "win32" ? ";" : ":") + appEnv.PATH,
+      PATH:
+        recorder.dir + (process.platform === "win32" ? ";" : ":") + appEnv.PATH,
     };
     const restore = stubAppToken();
     try {
@@ -447,20 +509,36 @@ test(
         { version: "1.2.3", execute: true },
         { cwd: fixture.consumer, env: appEnv },
       );
-      git(["push", "origin", ":refs/tags/v1.2.3"], { cwd: fixture.consumer, env });
+      git(["push", "origin", ":refs/tags/v1.2.3"], {
+        cwd: fixture.consumer,
+        env,
+      });
       const lines = [];
       const code = await tag(
         { version: "1.2.3", execute: true },
         { cwd: fixture.consumer, env: runEnv, log: (line) => lines.push(line) },
       );
       assert.equal(code, 0);
-      assert.match(lines.join("\n"), /Pushed existing tag v1\.2\.3; remote object verified/);
-      const remoteSha = remoteRefSha("refs/tags/v1.2.3", { cwd: fixture.consumer, env });
-      assert.equal(remoteSha, localObjectSha("refs/tags/v1.2.3", { cwd: fixture.consumer }));
-      const push = gitCalls(recorder.callsFile).find((call) => call.includes("push"));
+      assert.match(
+        lines.join("\n"),
+        /Pushed existing tag v1\.2\.3; remote object verified/,
+      );
+      const remoteSha = remoteRefSha("refs/tags/v1.2.3", {
+        cwd: fixture.consumer,
+        env,
+      });
+      assert.equal(
+        remoteSha,
+        localObjectSha("refs/tags/v1.2.3", { cwd: fixture.consumer }),
+      );
+      const push = gitCalls(recorder.callsFile).find((call) =>
+        call.includes("push"),
+      );
       assert.ok(push);
       assert.ok(
-        push.includes("http.extraheader=Authorization: Bearer fixture-app-token"),
+        push.includes(
+          "http.extraheader=Authorization: Bearer fixture-app-token",
+        ),
         "rerun push carried the App token extraheader",
       );
     } finally {
@@ -484,7 +562,10 @@ test(
         ),
         ExitCode.ERROR,
       );
-      assert.match(err.message, /Checked: NPM_RELEASE_FLOW_APP_PRIVATE_KEY in the local environment\./);
+      assert.match(
+        err.message,
+        /Checked: NPM_RELEASE_FLOW_APP_PRIVATE_KEY in the local environment\./,
+      );
       assert.match(err.message, /Created: local tag v1\.2\.3\./);
     } finally {
       fixture.cleanup();
@@ -506,7 +587,10 @@ test(
         ),
         ExitCode.ERROR,
       );
-      assert.match(err.message, /Checked: the NPM_RELEASE_FLOW_APP_ID repository variable/);
+      assert.match(
+        err.message,
+        /Checked: the NPM_RELEASE_FLOW_APP_ID repository variable/,
+      );
       assert.match(err.message, /Created: local tag v1\.2\.3\./);
     } finally {
       fixture.cleanup();

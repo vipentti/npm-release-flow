@@ -27,7 +27,6 @@ import {
   createSigningHome,
   envWithShim,
   gpgFixtureUsable,
-  readConsumerFile,
   setGhPrCreateUrl,
   setGhPrs,
   setGhRepoState,
@@ -51,111 +50,121 @@ test(
   "e2e: prepare -> merge -> detect -> verify against one fixture consumer",
   { skip: !hasGpg && "gpg is not available or ignores GNUPGHOME" },
   async () => {
-  const fixture = createFixtureRepo();
-  try {
-    const signing = createSigningHome(fixture.base);
-    git(["config", "user.signingkey", signing.fingerprint], {
-      cwd: fixture.consumer,
-    });
-    setGhPrCreateUrl(fixture, "https://github.com/example/fixture-consumer/pull/42");
-    const env = {
-      ...envWithShim(fixture),
-      GNUPGHOME: signing.home,
-      GITHUB_REPOSITORY: "example/fixture-consumer",
-      NPM_RELEASE_FLOW_GPG_FINGERPRINT: signing.fingerprint,
-      CALLER_REPOSITORY: "acme/consumer-app",
-    };
-    const outputFile = join(fixture.base, "output.txt");
-    writeFileSync(outputFile, "");
+    const fixture = createFixtureRepo();
+    try {
+      const signing = createSigningHome(fixture.base);
+      git(["config", "user.signingkey", signing.fingerprint], {
+        cwd: fixture.consumer,
+      });
+      setGhPrCreateUrl(
+        fixture,
+        "https://github.com/example/fixture-consumer/pull/42",
+      );
+      const env = {
+        ...envWithShim(fixture),
+        GNUPGHOME: signing.home,
+        GITHUB_REPOSITORY: "example/fixture-consumer",
+        NPM_RELEASE_FLOW_GPG_FINGERPRINT: signing.fingerprint,
+        CALLER_REPOSITORY: "acme/consumer-app",
+      };
+      const outputFile = join(fixture.base, "output.txt");
+      writeFileSync(outputFile, "");
 
-    // 1. prepare dry-run: prints the plan, changes nothing, exits 0.
-    const dryLines = [];
-    const dryCode = await prepare(
-      { version: "1.2.3", execute: false },
-      { cwd: fixture.consumer, env, log: (line) => dryLines.push(line) },
-    );
-    assert.equal(dryCode, 0);
-    assert.match(dryLines.join("\n"), /Would cut the changelog for 1\.2\.3/);
-    assert.equal(
-      localRefSha("refs/heads/release/v1.2.3", { cwd: fixture.consumer }),
-      null,
-    );
+      // 1. prepare dry-run: prints the plan, changes nothing, exits 0.
+      const dryLines = [];
+      const dryCode = await prepare(
+        { version: "1.2.3", execute: false },
+        { cwd: fixture.consumer, env, log: (line) => dryLines.push(line) },
+      );
+      assert.equal(dryCode, 0);
+      assert.match(dryLines.join("\n"), /Would cut the changelog for 1\.2\.3/);
+      assert.equal(
+        localRefSha("refs/heads/release/v1.2.3", { cwd: fixture.consumer }),
+        null,
+      );
 
-    // 2. prepare --execute: branch, signed commit, push, PR; back on main.
-    const execCode = await prepare(
-      { version: "1.2.3", execute: true },
-      { cwd: fixture.consumer, env },
-    );
-    assert.equal(execCode, 0);
-    assert.equal(
-      git(["branch", "--show-current"], { cwd: fixture.consumer }).stdout.trim(),
-      "main",
-    );
-    const branchSha = localRefSha("refs/heads/release/v1.2.3", {
-      cwd: fixture.consumer,
-    });
-    assert.ok(branchSha);
-    assert.equal(
-      remoteRefSha("refs/heads/release/v1.2.3", { cwd: fixture.consumer, env }),
-      branchSha,
-    );
+      // 2. prepare --execute: branch, signed commit, push, PR; back on main.
+      const execCode = await prepare(
+        { version: "1.2.3", execute: true },
+        { cwd: fixture.consumer, env },
+      );
+      assert.equal(execCode, 0);
+      assert.equal(
+        git(["branch", "--show-current"], {
+          cwd: fixture.consumer,
+        }).stdout.trim(),
+        "main",
+      );
+      const branchSha = localRefSha("refs/heads/release/v1.2.3", {
+        cwd: fixture.consumer,
+      });
+      assert.ok(branchSha);
+      assert.equal(
+        remoteRefSha("refs/heads/release/v1.2.3", {
+          cwd: fixture.consumer,
+          env,
+        }),
+        branchSha,
+      );
 
-    // 3. Simulate the PR merge (the workflow's triggering event), then run
-    //    detect against the merged main exactly as the job does.
-    const before = git(["rev-parse", "HEAD"], { cwd: fixture.consumer }).stdout.trim();
-    const merged = await mergeReleaseBranch(fixture, env, branchSha);
-    setGhRepoState(fixture, {
-      prBodies: {
-        42: "Kit: @vipentti/npm-release-flow@1.0.0\n\nRelease notes here.",
-      },
-    });
-    const detectEnv = {
-      ...env,
-      BEFORE_SHA: before,
-      GITHUB_SHA: merged,
-      GITHUB_OUTPUT: outputFile,
-      VERSION: "",
-    };
-    const detectCode = await detect({
-      cwd: fixture.consumer,
-      env: detectEnv,
-      log: () => {},
-    });
-    assert.equal(detectCode, 0);
-    const out = readFileSync(outputFile, "utf8");
-    assert.match(out, /^is-release=true$/m);
-    assert.match(out, /^version=1\.2\.3$/m);
+      // 3. Simulate the PR merge (the workflow's triggering event), then run
+      //    detect against the merged main exactly as the job does.
+      const before = git(["rev-parse", "HEAD"], {
+        cwd: fixture.consumer,
+      }).stdout.trim();
+      const merged = await mergeReleaseBranch(fixture, env, branchSha);
+      setGhRepoState(fixture, {
+        prBodies: {
+          42: "Kit: @vipentti/npm-release-flow@1.0.0\n\nRelease notes here.",
+        },
+      });
+      const detectEnv = {
+        ...env,
+        BEFORE_SHA: before,
+        GITHUB_SHA: merged,
+        GITHUB_OUTPUT: outputFile,
+        VERSION: "",
+      };
+      const detectCode = await detect({
+        cwd: fixture.consumer,
+        env: detectEnv,
+        log: () => {},
+      });
+      assert.equal(detectCode, 0);
+      const out = readFileSync(outputFile, "utf8");
+      assert.match(out, /^is-release=true$/m);
+      assert.match(out, /^version=1\.2\.3$/m);
 
-    // 4. verify the merged state: pack dir + sha256 output, both files
-    //    present (the artifact upload contract).
-    const verifyEnv = {
-      ...env,
-      VERSION: "1.2.3",
-      GITHUB_OUTPUT: outputFile,
-    };
-    const verifyCode = await verify({
-      cwd: fixture.consumer,
-      env: verifyEnv,
-      log: () => {},
-    });
-    assert.equal(verifyCode, 0);
-    const packDir = join(fixture.consumer, ".npm-release-flow-pack");
-    const packFiles = readdir(packDir).sort();
-    assert.equal(packFiles.length, 2);
-    const tarball = packFiles.find((name) => name.endsWith(".tgz"));
-    assert.ok(tarball);
-    assert.ok(packFiles.includes("pack.json"));
-    const verifyOut = readFileSync(outputFile, "utf8");
-    const shaLine = verifyOut.split("\n").find((l) => l.startsWith("package-sha256="));
-    assert.ok(shaLine);
-    assert.equal(
-      shaLine.split("=")[1],
-      sha256OfFile(join(packDir, tarball)),
-    );
-  } finally {
-    fixture.cleanup();
-  }
-});
+      // 4. verify the merged state: pack dir + sha256 output, both files
+      //    present (the artifact upload contract).
+      const verifyEnv = {
+        ...env,
+        VERSION: "1.2.3",
+        GITHUB_OUTPUT: outputFile,
+      };
+      const verifyCode = await verify({
+        cwd: fixture.consumer,
+        env: verifyEnv,
+        log: () => {},
+      });
+      assert.equal(verifyCode, 0);
+      const packDir = join(fixture.consumer, ".npm-release-flow-pack");
+      const packFiles = readdir(packDir).sort();
+      assert.equal(packFiles.length, 2);
+      const tarball = packFiles.find((name) => name.endsWith(".tgz"));
+      assert.ok(tarball);
+      assert.ok(packFiles.includes("pack.json"));
+      const verifyOut = readFileSync(outputFile, "utf8");
+      const shaLine = verifyOut
+        .split("\n")
+        .find((l) => l.startsWith("package-sha256="));
+      assert.ok(shaLine);
+      assert.equal(shaLine.split("=")[1], sha256OfFile(join(packDir, tarball)));
+    } finally {
+      fixture.cleanup();
+    }
+  },
+);
 
 test("e2e: bin exit codes 0/1/2 and error-content through the real CLI", async () => {
   const fixture = createFixtureRepo();
@@ -172,7 +181,9 @@ test("e2e: bin exit codes 0/1/2 and error-content through the real CLI", async (
       environments: ["release"],
       environmentRelease: {
         name: "release",
-        protection_rules: [{ id: 1, type: "required_reviewers", reviewers: [] }],
+        protection_rules: [
+          { id: 1, type: "required_reviewers", reviewers: [] },
+        ],
       },
       installationId: 9876,
     });
@@ -201,7 +212,10 @@ test("e2e: bin exit codes 0/1/2 and error-content through the real CLI", async (
     );
     assert.equal(brokenCode, 1);
     const text = brokenLines.join("\n");
-    assert.match(text, /Checked: the NPM_RELEASE_FLOW_GPG_PRIVATE_KEY secret\./);
+    assert.match(
+      text,
+      /Checked: the NPM_RELEASE_FLOW_GPG_PRIVATE_KEY secret\./,
+    );
     assert.match(text, /Found \d+ problem\(s\)\./);
 
     // prepare exits 2 for an already-prepared version (open PR) — bin exit
@@ -255,7 +269,10 @@ test("e2e: packaging gate — npm pack --dry-run lists the kit surface", () => {
   assert.ok(paths.includes("src/detect.mjs"), "detect.mjs ships");
   assert.ok(paths.includes("src/verify.mjs"), "verify.mjs ships");
   assert.ok(paths.includes("src/revalidate.mjs"), "revalidate.mjs ships");
-  assert.ok(paths.includes("src/validate-artifact.mjs"), "validate-artifact ships");
+  assert.ok(
+    paths.includes("src/validate-artifact.mjs"),
+    "validate-artifact ships",
+  );
   assert.ok(paths.includes("src/lib/spawn.mjs"), "spawn lib ships");
   assert.ok(paths.includes("bin/npm-release-flow.mjs"), "bin ships");
 });
@@ -264,7 +281,11 @@ test("e2e: tag verify-only on the merged release when the remote tag exists", as
   const fixture = createFixtureRepo();
   try {
     const env = envWithShim(fixture);
-    const mergeSha = createReleaseMerge(fixture, { version: "1.2.3", prNumber: 12 }, env);
+    const mergeSha = createReleaseMerge(
+      fixture,
+      { version: "1.2.3", prNumber: 12 },
+      env,
+    );
     // Push an annotated remote tag (lightweight fetch bug excluded; this
     // exercises the verify-only path shape).
     git(["tag", "-a", "-m", "Release v1.2.3", "v1.2.3", mergeSha], {
@@ -285,6 +306,9 @@ test("e2e: tag verify-only on the merged release when the remote tag exists", as
 
 /**
  * Merge the prepared release branch with GitHub's merge-message grammar.
+ * @param fixture
+ * @param env
+ * @param branchSha
  */
 async function mergeReleaseBranch(fixture, env, branchSha) {
   const { consumer } = fixture;

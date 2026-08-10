@@ -31,7 +31,11 @@ test("parseStableVersion rejects malformed input", () => {
     "1..3",
     "1.2.x",
   ]) {
-    assert.equal(parseStableVersion(value), null, `expected ${String(value)} to be rejected`);
+    assert.equal(
+      parseStableVersion(value),
+      null,
+      `expected ${String(value)} to be rejected`,
+    );
   }
 });
 

@@ -1,9 +1,10 @@
 /**
- * Detect job script (§5, §9, §10): classifies a push to main. Env-driven:
+ * Detect job script: classifies a push to main. Env-driven:
  * `BEFORE_SHA` (the previous push tip), `GITHUB_SHA` (the triggering commit),
  * `GITHUB_REPOSITORY` (owner/name), `GH_TOKEN` (gh auth). Binds HEAD to
- * `GITHUB_SHA`, validates the §4 mandatory consumer prerequisites before any
- * verdict, classifies per the §9 enumeration table, performs the §10
+ * `GITHUB_SHA`, validates the mandatory consumer prerequisites (CHANGELOG
+ * release-intent signal, `release:verify` script, committed lockfile) before
+ * any verdict, classifies per the release-state enumeration, performs the
  * skew-marker read only on the valid-release branch, and writes the declared
  * outputs (`is-release`, `version`) to `GITHUB_OUTPUT`.
  *
@@ -14,10 +15,7 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import {
-  CommandError,
-  describeFailure,
-} from "./lib/errors.mjs";
+import { CommandError, describeFailure } from "./lib/errors.mjs";
 import { git, gh, localRefSha } from "./lib/repo-state.mjs";
 import { parseStableVersion } from "./lib/versions.mjs";
 import { classifyRelease } from "./lib/release-state.mjs";
@@ -27,7 +25,7 @@ const zeroSha = "0000000000000000000000000000000000000000";
 const shaPattern = /^[0-9a-f]{40}$/;
 
 /**
- * @typedef {Object} DetectOptions
+ * @typedef {object} DetectOptions
  * @property {string} [cwd] Repository root (the consumer tree).
  * @property {NodeJS.ProcessEnv} [env] Environment (BEFORE_SHA, GITHUB_SHA,
  *   GITHUB_REPOSITORY, GH_TOKEN, GITHUB_OUTPUT...).
@@ -120,12 +118,13 @@ function writeOutput(env, name, value) {
 }
 
 /**
- * Validate the §4 mandatory consumer prerequisites before any verdict.
+ * Validate the mandatory consumer prerequisites (CHANGELOG release-intent
+ * signal, `release:verify` script, committed lockfile) before any verdict.
  * (Shared implementation lives in control-files.mjs.)
  */
 
 /**
- * The §10 skew-marker read: resolve the merged PR number from the triggering
+ * The skew-marker read: resolve the merged PR number from the triggering
  * commit's merge message, read the PR body via `gh api`, extract the
  * `Kit: @vipentti/npm-release-flow@<version>` marker, and compare it with the
  * kit checkout's version at `.npm-release-flow/package.json`. Any failure is
@@ -162,12 +161,7 @@ function skewMarkerProblem(version, mergeSubject, cwd, env) {
   let body;
   try {
     body = gh(
-      [
-        "api",
-        `repos/${repository}/pulls/${prNumber}`,
-        "--jq",
-        ".body",
-      ],
+      ["api", `repos/${repository}/pulls/${prNumber}`, "--jq", ".body"],
       { cwd, env },
     ).stdout;
   } catch (err) {
@@ -199,12 +193,14 @@ function skewMarkerProblem(version, mergeSubject, cwd, env) {
     return describeFailure({
       checked: "the kit checkout version at .npm-release-flow/package.json",
       found: "the kit package.json is missing or has no version",
-      correction: "check out the kit at the pinned workflow SHA into .npm-release-flow",
+      correction:
+        "check out the kit at the pinned workflow SHA into .npm-release-flow",
     });
   }
   if (marker[1] !== kitVersion) {
     return describeFailure({
-      checked: "that the kit version that prepared the release equals the kit checkout version",
+      checked:
+        "that the kit version that prepared the release equals the kit checkout version",
       found: `PR body stamps ${marker[1]}, but .npm-release-flow/package.json is ${kitVersion}`,
       correction:
         "move both pins (CLI devDependency and workflow SHA) in a single upgrade PR",
@@ -263,8 +259,7 @@ export async function detect(options = {}) {
     );
   }
 
-  // Bind HEAD to the triggering SHA; an unresolvable SHA is a hard fail
-  // (§9: HEAD != triggering SHA).
+  // Bind HEAD to the triggering SHA; an unresolvable SHA is a hard fail.
   let headSha;
   try {
     headSha = git(["rev-parse", "HEAD"], ctx).stdout.trim();
@@ -293,13 +288,14 @@ export async function detect(options = {}) {
     }
   }
 
-  // §4 mandatory prerequisites before any verdict.
+  // Mandatory prerequisites (CHANGELOG release-intent signal, `release:verify`
+  // script, committed lockfile) before any verdict.
   const prerequisite = mandatoryPrerequisiteProblem(ctx);
   if (prerequisite !== null) {
     return fail(prerequisite);
   }
 
-  // --- §9 classification ---
+  // --- Release-state classification ---
 
   const afterPkg = tryReadJson(cwd, "package.json");
   const afterVersion =
@@ -318,10 +314,7 @@ export async function detect(options = {}) {
     afterPkg,
     beforeLock: showJson(cwd, beforeSha, "package-lock.json"),
     afterLock: tryReadJson(cwd, "package-lock.json"),
-    changedFiles: git(
-      ["diff", "--name-only", beforeSha, afterSha],
-      ctx,
-    )
+    changedFiles: git(["diff", "--name-only", beforeSha, afterSha], ctx)
       .stdout.trim()
       .split("\n")
       .filter(Boolean),

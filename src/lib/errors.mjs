@@ -1,18 +1,18 @@
 /**
  * Exit-code taxonomy and error types for the npm-release-flow CLI.
  *
- * Exit codes are the programmatic contract (blueprint §8): 0 = success,
+ * Exit codes are the programmatic contract: 0 = success,
  * 1 = error, 2 = no-op / already done. Failures are distinguishable
  * programmatically, not only by message.
  *
- * Error-content contract (blueprint §8): every failure message must state,
+ * Error-content contract: every failure message must state,
  * always, what was checked, what state was actually found, and the correction
  * action. `describeFailure` composes that triple consistently; command-level
  * messages use it so the contract holds everywhere.
  */
 
 /**
- * Exit-code taxonomy (blueprint §8).
+ * Exit-code taxonomy.
  * @type {{ readonly SUCCESS: 0, readonly ERROR: 1, readonly NOOP: 2 }}
  */
 export const ExitCode = Object.freeze({
@@ -53,7 +53,7 @@ export class CommandError extends Error {
 }
 
 /**
- * Error that maps to a CLI exit code (blueprint §8).
+ * Error that maps to a CLI exit code.
  */
 export class CliError extends Error {
   /**

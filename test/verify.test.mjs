@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import { verify, kitRepository } from "../src/verify.mjs";
@@ -10,14 +16,12 @@ import {
   binEntryProblems,
   integrityOfFile,
   sha256OfFile,
-  extractedFilePaths,
 } from "../src/lib/pack-contract.mjs";
 import {
   createFixtureRepo,
   addKitDevDependency,
   createTempBase,
   envWithShim,
-  readConsumerFile,
 } from "./helpers/fixture.mjs";
 
 const KIT_VERSION = "1.0.0";
@@ -33,7 +37,7 @@ function verifyFixture() {
     ...envWithShim(fixture),
     VERSION: "1.2.2",
     // A normal consumer: CALLER_REPOSITORY differs from the fixture's own
-    // repository.url, so the §10 pin agreement is enforced.
+    // repository.url, so the pin agreement is enforced.
     CALLER_REPOSITORY: "acme/consumer-app",
     GH_TOKEN: "fixture-token",
     GITHUB_OUTPUT: outputFile,
@@ -86,12 +90,22 @@ test("pack-contract: problems for missing/extra tarballs, bad names, mismatches"
     const manifest = { name: "fixture-consumer", version: "1.2.2" };
     mkdirSync(packDir, { recursive: true });
     // No tarball at all.
-    let problems = packContractProblems({ packDir, report, manifest, version: "1.2.2" });
+    let problems = packContractProblems({
+      packDir,
+      report,
+      manifest,
+      version: "1.2.2",
+    });
     assert.ok(problems.some((p) => /exactly one tarball; found 0/.test(p)));
 
     // A tarball whose bytes don't match the reported integrity.
     writeFileSync(join(packDir, "fixture-consumer-1.2.2.tgz"), "bytes");
-    problems = packContractProblems({ packDir, report, manifest, version: "1.2.2" });
+    problems = packContractProblems({
+      packDir,
+      report,
+      manifest,
+      version: "1.2.2",
+    });
     assert.ok(problems.some((p) => /does not match the tarball bytes/.test(p)));
 
     // Version mismatch vs the release version.
@@ -101,7 +115,9 @@ test("pack-contract: problems for missing/extra tarballs, bad names, mismatches"
       manifest,
       version: "9.9.9",
     });
-    assert.ok(versionProblems.some((p) => /does not match the release version/.test(p)));
+    assert.ok(
+      versionProblems.some((p) => /does not match the release version/.test(p)),
+    );
   } finally {
     ctx.cleanup();
   }
@@ -112,18 +128,33 @@ test("pack-contract: bin-entry checks accept a shebang file and reject missing/e
   try {
     const dir = join(ctx.base, "extracted");
     mkdirSync(join(dir, "package"), { recursive: true });
-    writeFileSync(join(dir, "package", "tool.mjs"), "#!/usr/bin/env node\nconsole.log(1);\n");
+    writeFileSync(
+      join(dir, "package", "tool.mjs"),
+      "#!/usr/bin/env node\nconsole.log(1);\n",
+    );
     const manifest = { name: "pkg", bin: { tool: "./tool.mjs" } };
     assert.deepEqual(binEntryProblems(manifest, join(dir, "package")), []);
 
     writeFileSync(join(dir, "package", "tool.mjs"), "");
-    assert.ok(binEntryProblems(manifest, join(dir, "package")).some((p) => /is empty/.test(p)));
+    assert.ok(
+      binEntryProblems(manifest, join(dir, "package")).some((p) =>
+        /is empty/.test(p),
+      ),
+    );
 
     writeFileSync(join(dir, "package", "tool.mjs"), "console.log(1);\n");
-    assert.ok(binEntryProblems(manifest, join(dir, "package")).some((p) => /has no shebang/.test(p)));
+    assert.ok(
+      binEntryProblems(manifest, join(dir, "package")).some((p) =>
+        /has no shebang/.test(p),
+      ),
+    );
 
     const missing = { name: "pkg", bin: { other: "./missing.mjs" } };
-    assert.ok(binEntryProblems(missing, join(dir, "package")).some((p) => /does not exist/.test(p)));
+    assert.ok(
+      binEntryProblems(missing, join(dir, "package")).some((p) =>
+        /does not exist/.test(p),
+      ),
+    );
   } finally {
     ctx.cleanup();
   }
@@ -165,7 +196,10 @@ test("verify: fails on a missing mandatory file", async () => {
       log: (line) => problems.push(line),
     });
     assert.equal(code, 1);
-    assert.match(problems.join("\n"), /Checked: the CHANGELOG\.md control file\./);
+    assert.match(
+      problems.join("\n"),
+      /Checked: the CHANGELOG\.md control file\./,
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -181,7 +215,10 @@ test("verify: fails when the manifest version mismatches VERSION", async () => {
       log: (line) => problems.push(line),
     });
     assert.equal(code, 1);
-    assert.match(problems.join("\n"), /package\.json\.version is "1\.2\.2", expected "9\.9\.9"/);
+    assert.match(
+      problems.join("\n"),
+      /package\.json\.version is "1\.2\.2", expected "9\.9\.9"/,
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -226,7 +263,10 @@ test("verify: skewed pin (installed kit version differs from the checkout) fails
     });
     assert.equal(code, 1);
     const text = problems.join("\n");
-    assert.match(text, /Checked: that the installed kit version equals the kit checkout version\./);
+    assert.match(
+      text,
+      /Checked: that the installed kit version equals the kit checkout version\./,
+    );
     assert.match(text, /Found: installed 2\.0\.0, checkout 1\.0\.0\./);
   } finally {
     ctx.fixture.cleanup();
@@ -262,7 +302,9 @@ test("verify: self-host fixture passes without a self devDependency", async () =
     pkg.repository.url = "git+https://github.com/vipentti/npm-release-flow.git";
     writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
     // CALLER_REPOSITORY equals the kit repository -> self-host.
-    const code = await runVerify(ctx, { CALLER_REPOSITORY: "vipentti/npm-release-flow" });
+    const code = await runVerify(ctx, {
+      CALLER_REPOSITORY: "vipentti/npm-release-flow",
+    });
     assert.equal(code, 0);
   } finally {
     ctx.fixture.cleanup();
@@ -271,7 +313,11 @@ test("verify: self-host fixture passes without a self devDependency", async () =
 
 test("kitRepository derives owner/name from repository.url", () => {
   assert.equal(
-    kitRepository({ repository: { url: "git+https://github.com/vipentti/npm-release-flow.git" } }),
+    kitRepository({
+      repository: {
+        url: "git+https://github.com/vipentti/npm-release-flow.git",
+      },
+    }),
     "vipentti/npm-release-flow",
   );
   assert.equal(
@@ -279,5 +325,8 @@ test("kitRepository derives owner/name from repository.url", () => {
     "owner/repo",
   );
   assert.equal(kitRepository({}), null);
-  assert.equal(kitRepository({ repository: { url: "git@gitlab.com:owner/repo.git" } }), null);
+  assert.equal(
+    kitRepository({ repository: { url: "git@gitlab.com:owner/repo.git" } }),
+    null,
+  );
 });

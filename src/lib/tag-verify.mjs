@@ -7,15 +7,12 @@
 
 import { runSync } from "./spawn.mjs";
 import { CommandError, describeFailure } from "./errors.mjs";
-import {
-  configuredSigningKey,
-  gpgProgram,
-} from "./repo-state.mjs";
+import { configuredSigningKey, gpgProgram } from "./repo-state.mjs";
 
 /**
- * @typedef {Object} SigningCtx
- * @property {string} cwd
- * @property {NodeJS.ProcessEnv} env
+ * @typedef {object} SigningCtx
+ * @property {string} cwd The directory the signing commands run in.
+ * @property {NodeJS.ProcessEnv} env The environment for the signing commands.
  */
 
 /**
@@ -111,12 +108,7 @@ export function fingerprintSigningState(ctx) {
   try {
     runSync(
       gpgProgram(ctx),
-      [
-        "--batch",
-        ...gpgHomeArgs(ctx.env),
-        "--list-secret-keys",
-        normalized,
-      ],
+      ["--batch", ...gpgHomeArgs(ctx.env), "--list-secret-keys", normalized],
       ctx,
     );
   } catch (err) {

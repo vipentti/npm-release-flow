@@ -14,7 +14,9 @@ import {
   setRepoSigningKey,
 } from "./helpers/fixture.mjs";
 
-const binPath = fileURLToPath(new URL("../bin/npm-release-flow.mjs", import.meta.url));
+const binPath = fileURLToPath(
+  new URL("../bin/npm-release-flow.mjs", import.meta.url),
+);
 
 const ALL_SECRETS = [
   "NPM_RELEASE_FLOW_GPG_PRIVATE_KEY",
@@ -31,11 +33,19 @@ const ALL_VARIABLES = [
 
 /**
  * Run the bin as a subprocess and capture status/stdout/stderr.
+ * @param args
+ * @param root0
+ * @param root0.cwd
+ * @param root0.env
  */
 function runBin(args, { cwd, env }) {
   try {
     const result = runSync(process.execPath, [binPath, ...args], { cwd, env });
-    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+    return {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
   } catch (err) {
     return { status: err.status, stdout: err.stdout, stderr: err.stderr };
   }
@@ -81,10 +91,16 @@ function prepareFixture() {
 test("bin: no subcommand exits 1 with usage on stderr", () => {
   const fixture = createFixtureRepo({ remote: false });
   try {
-    const result = runBin([], { cwd: fixture.consumer, env: envWithShim(fixture) });
+    const result = runBin([], {
+      cwd: fixture.consumer,
+      env: envWithShim(fixture),
+    });
     assert.equal(result.status, 1);
     assert.match(result.stderr, /missing subcommand/);
-    assert.match(result.stderr, /usage: npm-release-flow <prepare\|tag\|check>/);
+    assert.match(
+      result.stderr,
+      /usage: npm-release-flow <prepare\|tag\|check>/,
+    );
   } finally {
     fixture.cleanup();
   }
@@ -185,7 +201,10 @@ test("bin: prepare dry-run prints the plan and exits 0", () => {
       env,
     });
     assert.equal(result.status, 0);
-    assert.match(result.stdout, /\[dry-run\] Would cut the changelog for 1\.2\.3/);
+    assert.match(
+      result.stdout,
+      /\[dry-run\] Would cut the changelog for 1\.2\.3/,
+    );
     assert.match(result.stdout, /Signing preflight: commit-signing key/);
   } finally {
     fixture.cleanup();

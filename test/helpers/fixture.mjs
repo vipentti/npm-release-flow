@@ -48,7 +48,12 @@ function gitDirect(args, ctx) {
       `git ${args.join(" ")} exited with status ${String(result.status)}:\n${result.stderr}`,
     );
   }
-  return { status: 0, stdout: result.stdout, stderr: result.stderr, signal: null };
+  return {
+    status: 0,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    signal: null,
+  };
 }
 
 /**
@@ -221,7 +226,7 @@ process.exit(1);
 `;
 
 /**
- * @typedef {Object} Fixture
+ * @typedef {object} Fixture
  * @property {string} base Temp base directory.
  * @property {string} consumer Consumer work repo.
  * @property {string} remote Bare remote path.
@@ -358,15 +363,19 @@ export function createFixtureRepo({ remote = true } = {}) {
   mkdirSync(join(consumer, "bin"), { recursive: true });
   writeFileSync(
     join(consumer, "bin", "fixture-tool.mjs"),
-    "#!/usr/bin/env node\nconsole.log(\"fixture-tool\");\n",
+    '#!/usr/bin/env node\nconsole.log("fixture-tool");\n',
     "utf8",
   );
   // The guarded kit checkout the workflow creates at job time (detect reads
-  // its version for the §10 skew-marker comparison).
+  // its version for the skew-marker comparison).
   mkdirSync(join(consumer, ".npm-release-flow"), { recursive: true });
   writeFileSync(
     join(consumer, ".npm-release-flow", "package.json"),
-    JSON.stringify({ name: "@vipentti/npm-release-flow", version: "1.0.0" }, null, 2) + "\n",
+    JSON.stringify(
+      { name: "@vipentti/npm-release-flow", version: "1.0.0" },
+      null,
+      2,
+    ) + "\n",
     "utf8",
   );
 
@@ -387,7 +396,11 @@ export function createFixtureRepo({ remote = true } = {}) {
       "[core]",
       "\tautocrlf = false",
       ...(remote
-        ? ['[remote "origin"]', `\turl = ${remotePath.replace(/\\/g, "\\\\")}`, "\tfetch = +refs/heads/*:refs/remotes/origin/*"]
+        ? [
+            '[remote "origin"]',
+            `\turl = ${remotePath.replace(/\\/g, "\\\\")}`,
+            "\tfetch = +refs/heads/*:refs/remotes/origin/*",
+          ]
         : []),
       "",
     ].join("\n"),
@@ -447,7 +460,9 @@ export function envWithShim(fixture) {
     GH_FIXTURE_STATE: fixture.ghState,
     GH_FIXTURE_CALLS: fixture.callsFile,
     PATH:
-      fixture.shim + (process.platform === "win32" ? ";" : ":") + process.env.PATH,
+      fixture.shim +
+      (process.platform === "win32" ? ";" : ":") +
+      process.env.PATH,
   };
 }
 
@@ -516,12 +531,23 @@ export function ghCalls(fixture) {
  * @param {NodeJS.ProcessEnv} [env] Fixture env for git calls.
  * @returns {string} The merge commit SHA.
  */
-export function createReleaseMerge(fixture, { version, prNumber, owner = "example/fixture-consumer" }, env) {
+export function createReleaseMerge(
+  fixture,
+  { version, prNumber, owner = "example/fixture-consumer" },
+  env,
+) {
   const ctx = { cwd: fixture.consumer, env };
   const branch = `release/v${version}`;
-  const pkg = JSON.parse(readFileSync(join(fixture.consumer, "package.json"), "utf8"));
-  const lock = JSON.parse(readFileSync(join(fixture.consumer, "package-lock.json"), "utf8"));
-  const changelog = readFileSync(join(fixture.consumer, "CHANGELOG.md"), "utf8");
+  const pkg = JSON.parse(
+    readFileSync(join(fixture.consumer, "package.json"), "utf8"),
+  );
+  const lock = JSON.parse(
+    readFileSync(join(fixture.consumer, "package-lock.json"), "utf8"),
+  );
+  const changelog = readFileSync(
+    join(fixture.consumer, "CHANGELOG.md"),
+    "utf8",
+  );
   const compareUrl = "https://github.com/example/fixture-consumer/compare";
   const cut = cutChangelog(changelog, {
     previousVersion: pkg.version,
@@ -535,9 +561,21 @@ export function createReleaseMerge(fixture, { version, prNumber, owner = "exampl
   lock.packages[""].version = version;
 
   gitDirect(["checkout", "-b", branch], ctx);
-  writeFileSync(join(fixture.consumer, "package.json"), JSON.stringify(pkg, null, 2) + "\n", "utf8");
-  writeFileSync(join(fixture.consumer, "package-lock.json"), JSON.stringify(lock, null, 2) + "\n", "utf8");
-  writeFileSync(join(fixture.consumer, "CHANGELOG.md"), /** @type {string} */ (cut.content), "utf8");
+  writeFileSync(
+    join(fixture.consumer, "package.json"),
+    JSON.stringify(pkg, null, 2) + "\n",
+    "utf8",
+  );
+  writeFileSync(
+    join(fixture.consumer, "package-lock.json"),
+    JSON.stringify(lock, null, 2) + "\n",
+    "utf8",
+  );
+  writeFileSync(
+    join(fixture.consumer, "CHANGELOG.md"),
+    /** @type {string} */ (cut.content),
+    "utf8",
+  );
   // All three files are tracked and modified, so `commit -a` stages them
   // without a separate `git add` spawn.
   gitDirect(["commit", "-a", "-m", `release: ${version}`], ctx);
@@ -777,7 +815,8 @@ function createSharedSigningHome() {
       .split("\n")
       .find((line) => line.startsWith("fpr:"))
       ?.split(":")[9];
-    if (!fpr) throw new Error("could not determine the fixture GPG fingerprint");
+    if (!fpr)
+      throw new Error("could not determine the fixture GPG fingerprint");
     sharedSigningHome = { home, fingerprint: fpr };
     process.on("exit", () => {
       rmSync(home, { recursive: true, force: true });
@@ -787,10 +826,11 @@ function createSharedSigningHome() {
 }
 
 /**
- * @param {string} baseDir
+ * @param {string} _baseDir Kept for caller compatibility; the signing home
+ *   is shared per process (see `createSharedSigningHome`).
  * @returns {{ home: string, fingerprint: string }}
  */
-export function createSigningHome(baseDir) {
+export function createSigningHome(_baseDir) {
   return createSharedSigningHome();
 }
 
@@ -834,20 +874,21 @@ export function readConsumerFile(fixture, relPath) {
 /**
  * Pin the kit as the consumer's devDependency, installing from a local
  * vendor tarball (offline): the installed copy's version then drives the
- * §10 pin-agreement check. The tarball is produced with a real `npm pack`;
+ * pin-agreement check. The tarball is produced with a real `npm pack`;
  * the lockfile is written directly in npm's own shape instead of running
  * `npm install --package-lock-only` (~0.9s of npm resolution per call).
  *
  * @param {Fixture} fixture
- * @param {{ version: string, env?: NodeJS.ProcessEnv }} options
+ * @param {{ version: string }} options
  */
-export function addKitDevDependency(fixture, { version, env }) {
+export function addKitDevDependency(fixture, { version }) {
   const vendor = join(fixture.base, "vendor");
   const kitDir = join(vendor, `kit-${version}`);
   mkdirSync(kitDir, { recursive: true });
   writeFileSync(
     join(kitDir, "package.json"),
-    JSON.stringify({ name: "@vipentti/npm-release-flow", version }, null, 2) + "\n",
+    JSON.stringify({ name: "@vipentti/npm-release-flow", version }, null, 2) +
+      "\n",
     "utf8",
   );
   runSync("npm", ["pack", "--pack-destination", vendor], { cwd: kitDir });

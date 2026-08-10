@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync, createVerify, createPublicKey } from "node:crypto";
+import { generateKeyPairSync, createVerify } from "node:crypto";
 import { createAppJwt, mintAppToken } from "../src/lib/app-token.mjs";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", {
@@ -15,9 +15,13 @@ test("createAppJwt produces a structurally valid RS256 JWT", () => {
   });
   const parts = jwt.split(".");
   assert.equal(parts.length, 3);
-  const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+  const header = JSON.parse(
+    Buffer.from(parts[0], "base64url").toString("utf8"),
+  );
   assert.deepEqual(header, { alg: "RS256", typ: "JWT" });
-  const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  const payload = JSON.parse(
+    Buffer.from(parts[1], "base64url").toString("utf8"),
+  );
   assert.equal(payload.iss, "12345");
   assert.equal(payload.iat, 1_700_000_000);
   assert.equal(payload.exp, 1_700_000_600);
@@ -46,12 +50,17 @@ function stubFetch({ installation = true, token = true } = {}) {
   globalThis.fetch = async (url) => {
     const u = String(url);
     if (u.endsWith("/installation")) {
-      if (!installation) return { ok: false, status: 404, json: async () => ({}) };
+      if (!installation)
+        return { ok: false, status: 404, json: async () => ({}) };
       return { ok: true, status: 200, json: async () => ({ id: 9876 }) };
     }
     if (u.endsWith("/access_tokens")) {
       if (!token) return { ok: false, status: 500, json: async () => ({}) };
-      return { ok: true, status: 201, json: async () => ({ token: "fixture-app-token" }) };
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({ token: "fixture-app-token" }),
+      };
     }
     return { ok: false, status: 404, json: async () => ({}) };
   };

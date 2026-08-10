@@ -149,8 +149,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     permissions:
-      contents: write   # GitHub Release creation via github.token
-      id-token: write   # npm Trusted Publishing, this job only
+      contents: write # GitHub Release creation via github.token
+      id-token: write # npm Trusted Publishing, this job only
     steps:
       # §9 step order is the trust boundary: the consumer checkout at the
       # triggering SHA comes first (tag probe, revalidation, changelog access,
