@@ -15,6 +15,7 @@ import {
 import {
   createFixtureRepo,
   addKitDevDependency,
+  createTempBase,
   envWithShim,
   readConsumerFile,
 } from "./helpers/fixture.mjs";
@@ -54,26 +55,26 @@ function runVerify(ctx, envOverrides = {}) {
 }
 
 test("pack-contract: integrity and sha256 helpers match the bytes", () => {
-  const file = join(verifyFixture().fixture.base, "nonexistent");
-  // Use a real file: the consumer's package.json.
-  const ctx = verifyFixture();
+  // The pack-contract helpers only need scratch files, not a git repo.
+  const ctx = createTempBase();
+  const file = join(ctx.base, "nonexistent");
   try {
-    const pkgPath = join(ctx.fixture.consumer, "package.json");
+    const pkgPath = join(ctx.consumer, "package.json");
     const bytes = readFileSync(pkgPath);
     const expectedIntegrity = `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
     const expectedSha256 = createHash("sha256").update(bytes).digest("hex");
     assert.equal(integrityOfFile(pkgPath), expectedIntegrity);
     assert.equal(sha256OfFile(pkgPath), expectedSha256);
   } finally {
-    ctx.fixture.cleanup();
+    ctx.cleanup();
   }
   assert.equal(file.includes("nonexistent"), true);
 });
 
 test("pack-contract: problems for missing/extra tarballs, bad names, mismatches", () => {
-  const ctx = verifyFixture();
+  const ctx = createTempBase();
   try {
-    const packDir = join(ctx.fixture.base, "packdir");
+    const packDir = join(ctx.base, "packdir");
     const report = [
       {
         filename: "fixture-consumer-1.2.2.tgz",
@@ -102,14 +103,14 @@ test("pack-contract: problems for missing/extra tarballs, bad names, mismatches"
     });
     assert.ok(versionProblems.some((p) => /does not match the release version/.test(p)));
   } finally {
-    ctx.fixture.cleanup();
+    ctx.cleanup();
   }
 });
 
 test("pack-contract: bin-entry checks accept a shebang file and reject missing/empty", () => {
-  const ctx = verifyFixture();
+  const ctx = createTempBase();
   try {
-    const dir = join(ctx.fixture.base, "extracted");
+    const dir = join(ctx.base, "extracted");
     mkdirSync(join(dir, "package"), { recursive: true });
     writeFileSync(join(dir, "package", "tool.mjs"), "#!/usr/bin/env node\nconsole.log(1);\n");
     const manifest = { name: "pkg", bin: { tool: "./tool.mjs" } };
@@ -124,7 +125,7 @@ test("pack-contract: bin-entry checks accept a shebang file and reject missing/e
     const missing = { name: "pkg", bin: { other: "./missing.mjs" } };
     assert.ok(binEntryProblems(missing, join(dir, "package")).some((p) => /does not exist/.test(p)));
   } finally {
-    ctx.fixture.cleanup();
+    ctx.cleanup();
   }
 });
 

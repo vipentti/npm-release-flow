@@ -35,7 +35,8 @@ function produceArtifact(fixture, env) {
 }
 
 function artifactFixture() {
-  const fixture = createFixtureRepo();
+  // validateArtifact never touches the git remote, so skip the bare remote.
+  const fixture = createFixtureRepo({ remote: false });
   const githubEnv = join(fixture.base, "github-env.txt");
   writeFileSync(githubEnv, "", "utf8");
   const env = { ...envWithShim(fixture), GITHUB_ENV: githubEnv };

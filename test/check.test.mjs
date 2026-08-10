@@ -30,7 +30,8 @@ const ALL_VARIABLES = [
  * A fixture configured so every check passes.
  */
 function goodCheckFixture() {
-  const fixture = createFixtureRepo();
+  // `check` never touches the git remote, so skip the bare remote + push.
+  const fixture = createFixtureRepo({ remote: false });
   const signing = createSigningHome(fixture.base);
   setRepoSigningKey(fixture, signing.fingerprint);
   setGhRepoState(fixture, {
@@ -295,7 +296,7 @@ test("check flags a missing git identity", async () => {
 });
 
 test("check flags a missing commit-signing key", async () => {
-  const fixture = createFixtureRepo();
+  const fixture = createFixtureRepo({ remote: false });
   const signing = createSigningHome(fixture.base);
   setGhRepoState(fixture, {
     repo: "example/fixture-consumer",
@@ -329,7 +330,7 @@ test("check flags a missing commit-signing key", async () => {
 });
 
 test("check flags a missing NPM_RELEASE_FLOW_GPG_FINGERPRINT and its key", async () => {
-  const fixture = createFixtureRepo();
+  const fixture = createFixtureRepo({ remote: false });
   const signing = createSigningHome(fixture.base);
   setRepoSigningKey(fixture, signing.fingerprint);
   setGhRepoState(fixture, {
@@ -363,7 +364,7 @@ test("check flags a missing NPM_RELEASE_FLOW_GPG_FINGERPRINT and its key", async
 });
 
 test("check lists every problem, not just the first", async () => {
-  const fixture = createFixtureRepo();
+  const fixture = createFixtureRepo({ remote: false });
   const signing = createSigningHome(fixture.base);
   const env = {
     ...envWithShim(fixture),

@@ -42,7 +42,8 @@ function runBin(args, { cwd, env }) {
 }
 
 function goodCheckFixture() {
-  const fixture = createFixtureRepo();
+  // `check` never touches the git remote, so skip the bare remote + push.
+  const fixture = createFixtureRepo({ remote: false });
   const signing = createSigningHome(fixture.base);
   setRepoSigningKey(fixture, signing.fingerprint);
   setGhRepoState(fixture, {
@@ -78,7 +79,7 @@ function prepareFixture() {
 }
 
 test("bin: no subcommand exits 1 with usage on stderr", () => {
-  const fixture = createFixtureRepo();
+  const fixture = createFixtureRepo({ remote: false });
   try {
     const result = runBin([], { cwd: fixture.consumer, env: envWithShim(fixture) });
     assert.equal(result.status, 1);
@@ -90,7 +91,7 @@ test("bin: no subcommand exits 1 with usage on stderr", () => {
 });
 
 test("bin: unknown subcommand exits 1 with usage on stderr", () => {
-  const fixture = createFixtureRepo();
+  const fixture = createFixtureRepo({ remote: false });
   try {
     const result = runBin(["frobnicate"], {
       cwd: fixture.consumer,
@@ -105,7 +106,7 @@ test("bin: unknown subcommand exits 1 with usage on stderr", () => {
 });
 
 test("bin: unknown flag exits 1 with usage on stderr", () => {
-  const fixture = createFixtureRepo();
+  const fixture = createFixtureRepo({ remote: false });
   try {
     const result = runBin(["check", "--bogus"], {
       cwd: fixture.consumer,
@@ -120,7 +121,7 @@ test("bin: unknown flag exits 1 with usage on stderr", () => {
 });
 
 test("bin: --help prints usage on stdout and exits 0", () => {
-  const fixture = createFixtureRepo();
+  const fixture = createFixtureRepo({ remote: false });
   try {
     const result = runBin(["--help"], {
       cwd: fixture.consumer,
@@ -134,7 +135,7 @@ test("bin: --help prints usage on stdout and exits 0", () => {
 });
 
 test("bin: prepare without --version exits 1 with usage", () => {
-  const fixture = createFixtureRepo();
+  const fixture = createFixtureRepo({ remote: false });
   try {
     const result = runBin(["prepare"], {
       cwd: fixture.consumer,
@@ -159,7 +160,7 @@ test("bin: check exits 0 in a fully configured fixture", () => {
 });
 
 test("bin: check exits 1 listing problems in a broken fixture", () => {
-  const fixture = createFixtureRepo();
+  const fixture = createFixtureRepo({ remote: false });
   try {
     const signing = createSigningHome(fixture.base);
     const env = {
@@ -213,7 +214,7 @@ test("bin: exit code 2 is plumbed for an already-prepared release", () => {
 });
 
 test("bin: main() programmatic entry returns the exit code", async () => {
-  const fixture = createFixtureRepo();
+  const fixture = createFixtureRepo({ remote: false });
   try {
     const lines = [];
     const code = await main(["check"], {

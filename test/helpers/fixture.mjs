@@ -286,15 +286,43 @@ export function createGitPushBlocker(baseDir) {
 }
 
 /**
+ * A bare temp sandbox with a consumer-style directory (package.json only,
+ * no git repo, no shims): for tests that only need scratch files and never
+ * touch git/npm. Much cheaper than `createFixtureRepo`.
+ *
+ * @returns {{ base: string, consumer: string, cleanup: () => void }}
+ */
+export function createTempBase() {
+  const base = mkdtempSync(join(tmpdir(), "npmrf-fixture-"));
+  const consumer = join(base, "consumer");
+  mkdirSync(consumer, { recursive: true });
+  writeFileSync(
+    join(consumer, "package.json"),
+    JSON.stringify(packageJson(), null, 2) + "\n",
+    "utf8",
+  );
+  return {
+    base,
+    consumer,
+    cleanup() {
+      rmSync(base, { recursive: true, force: true });
+    },
+  };
+}
+
+/**
  * Create a fixture consumer repo (initial commit on main, pushed to a local
  * bare remote) plus the PATH-shimmed `gh`.
  *
+ * @param {{ remote?: boolean }} [options] When `remote` is false, the bare
+ *   remote and the initial push are skipped (commands that never touch the
+ *   remote, e.g. `check`, still get a fully working local repo).
  * @returns {Fixture}
  */
-export function createFixtureRepo() {
+export function createFixtureRepo({ remote = true } = {}) {
   const base = mkdtempSync(join(tmpdir(), "npmrf-fixture-"));
   const consumer = join(base, "consumer");
-  const remote = join(base, "remote.git");
+  const remotePath = join(base, "remote.git");
   const shim = join(base, "shim");
   const ghState = join(base, "gh-state.json");
   const callsFile = join(base, "gh-calls.log");
@@ -358,17 +386,19 @@ export function createFixtureRepo() {
       // config must not leak into checkout comparisons).
       "[core]",
       "\tautocrlf = false",
-      '[remote "origin"]',
-      `\turl = ${remote.replace(/\\/g, "\\\\")}`,
-      "\tfetch = +refs/heads/*:refs/remotes/origin/*",
+      ...(remote
+        ? ['[remote "origin"]', `\turl = ${remotePath.replace(/\\/g, "\\\\")}`, "\tfetch = +refs/heads/*:refs/remotes/origin/*"]
+        : []),
       "",
     ].join("\n"),
     "utf8",
   );
   gitDirect(["add", "."], gitCtx);
   gitDirect(["commit", "-m", "initial fixture commit"], gitCtx);
-  gitDirect(["init", "--bare", remote], { cwd: base, env: hermeticEnv });
-  gitDirect(["push", "-u", "origin", "main"], gitCtx);
+  if (remote) {
+    gitDirect(["init", "--bare", remotePath], { cwd: base, env: hermeticEnv });
+    gitDirect(["push", "-u", "origin", "main"], gitCtx);
+  }
 
   writeFileSync(join(shim, "gh-fixture.mjs"), ghFixtureScript, "utf8");
   if (process.platform === "win32") {
@@ -391,7 +421,7 @@ export function createFixtureRepo() {
   return {
     base,
     consumer,
-    remote,
+    remote: remotePath,
     shim,
     ghState,
     callsFile,
