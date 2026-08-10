@@ -57,12 +57,37 @@ test("exit status 2 and another non-zero status survive and are distinguishable"
   assert.notEqual(status2.status, status7.status);
 });
 
-test("signal is captured when the process is terminated", () => {
-  assert.throws(
-    () => runSync(node, code("setInterval(() => {}, 1000)"), { timeout: 200 }),
-    (err) => err instanceof CommandError && err.signal !== null && err.status !== 0,
-  );
-});
+test(
+  "signal is captured when the process is terminated",
+  { skip: process.platform === "win32" && "signals do not propagate through cmd" },
+  () => {
+    assert.throws(
+      () => runSync(node, code("setInterval(() => {}, 1000)"), { timeout: 200 }),
+      (err) =>
+        err instanceof CommandError && err.signal === "SIGTERM" && err.status === null,
+    );
+  },
+);
+
+test(
+  "win32: timeout termination is reported without leaking the grandchild",
+  { skip: process.platform !== "win32" },
+  () => {
+    // The timeout kills the cmd wrapper; the grandchild node process must
+    // exit on its own (bounded lifetime) to avoid a leak.
+    assert.throws(
+      () =>
+        runSync(
+          node,
+          code(
+            "setInterval(() => {}, 1000); setTimeout(() => process.exit(0), 1500)",
+          ),
+          { timeout: 200 },
+        ),
+      (err) => err instanceof CommandError && err.signal !== null && err.status !== 0,
+    );
+  },
+);
 
 test("refProbeSync: status 0 is present, status 2 is absent, other non-zero is an error", () => {
   const present = refProbeSync(node, code("process.exit(0)"));
@@ -101,6 +126,11 @@ test("win32CommandLine quotes arguments with spaces or metacharacters", () => {
     win32CommandLine("echo", ["a&b", 'say "hi"', ""]),
     '"echo "a&b" "say ""hi""" """',
   );
+  // cmd treats , ; = as argument separators outside quotes.
+  assert.equal(
+    win32CommandLine("gh", ["--json", "number,state,url"]),
+    '"gh --json "number,state,url""',
+  );
 });
 
 test("runAsync resolves with captured output", async () => {
@@ -117,6 +147,14 @@ test("runAsync rejects with CommandError carrying status and stderr", async () =
       err.status === 4 &&
       err.stderr === "async-err",
   );
+});
+
+test("runSync writes input to the child's stdin", () => {
+  const result = runSync(node, code("let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => { console.log('got:' + d); });"), {
+    input: "hello stdin",
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, "got:hello stdin\n");
 });
 
 test(

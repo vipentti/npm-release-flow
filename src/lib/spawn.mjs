@@ -33,8 +33,9 @@ export function win32Shell(platform = process.platform) {
 
 /**
  * Quote a single argument for cmd.exe: wrap in double quotes when it is empty
- * or contains whitespace or a cmd metacharacter, doubling embedded quotes.
- * `%` is not neutralized (cmd expands variables even inside quotes); the kit
+ * or contains whitespace or a cmd metacharacter (`&|<>()^"` separators, `,;=`
+ * argument separators, `%!` variable syntax), doubling embedded quotes. `%`
+ * is not neutralized (cmd expands variables even inside quotes); the kit
  * never passes arguments containing `%`.
  *
  * @param {string} arg
@@ -42,7 +43,7 @@ export function win32Shell(platform = process.platform) {
  */
 function cmdQuote(arg) {
   if (arg === "") return '""';
-  if (/[ \t\n&|<>()^"%!]/.test(arg)) {
+  if (/[ \t\n&|<>()^"%!,;=]/.test(arg)) {
     return '"' + arg.replace(/"/g, '""') + '"';
   }
   return arg;
@@ -68,6 +69,8 @@ export function win32CommandLine(command, args) {
  * @property {NodeJS.ProcessEnv} [env] Environment for the child.
  * @property {number} [maxBuffer] Largest amount of captured output in bytes.
  * @property {number} [timeout] Milliseconds before the child is killed.
+ * @property {string | Buffer | null} [input] Data written to the child's
+ *   stdin (sync variant only).
  */
 
 /**
@@ -119,6 +122,7 @@ export function runSync(command, args = [], options = {}) {
     env: options.env,
     maxBuffer: options.maxBuffer,
     timeout: options.timeout,
+    input: options.input ?? undefined,
     windowsVerbatimArguments: vector.windowsVerbatimArguments,
     encoding: "utf8",
   });
