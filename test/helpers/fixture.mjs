@@ -45,6 +45,7 @@ function packageJson(version = "1.2.2") {
       url: "git+https://github.com/example/fixture-consumer.git",
     },
     scripts: { "release:verify": "echo verify" },
+    bin: { "fixture-tool": "./bin/fixture-tool.mjs" },
   };
 }
 
@@ -245,6 +246,13 @@ export function createFixtureRepo() {
   );
   writeFileSync(join(consumer, "CHANGELOG.md"), CHANGELOG, "utf8");
   writeFileSync(join(consumer, "README.md"), "# Fixture consumer\n", "utf8");
+  // A declared bin entry: the verify job checks bin resolution from the pack.
+  mkdirSync(join(consumer, "bin"), { recursive: true });
+  writeFileSync(
+    join(consumer, "bin", "fixture-tool.mjs"),
+    "#!/usr/bin/env node\nconsole.log(\"fixture-tool\");\n",
+    "utf8",
+  );
   // The guarded kit checkout the workflow creates at job time (detect reads
   // its version for the §10 skew-marker comparison).
   mkdirSync(join(consumer, ".npm-release-flow"), { recursive: true });
@@ -571,4 +579,37 @@ export function gpgFixtureUsable() {
  */
 export function readConsumerFile(fixture, relPath) {
   return readFileSync(join(fixture.consumer, relPath), "utf8");
+}
+
+/**
+ * Pin the kit as the consumer's devDependency, installing from a local
+ * vendor tarball (offline): the installed copy's version then drives the
+ * §10 pin-agreement check.
+ *
+ * @param {Fixture} fixture
+ * @param {{ version: string, env?: NodeJS.ProcessEnv }} options
+ */
+export function addKitDevDependency(fixture, { version, env }) {
+  const vendor = join(fixture.base, "vendor");
+  const kitDir = join(vendor, `kit-${version}`);
+  mkdirSync(kitDir, { recursive: true });
+  writeFileSync(
+    join(kitDir, "package.json"),
+    JSON.stringify({ name: "@vipentti/npm-release-flow", version }, null, 2) + "\n",
+    "utf8",
+  );
+  runSync("npm", ["pack", "--pack-destination", vendor], { cwd: kitDir });
+  const tgz = `vipentti-npm-release-flow-${version}.tgz`;
+  const pkgPath = join(fixture.consumer, "package.json");
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+  pkg.devDependencies = {
+    ...(pkg.devDependencies ?? {}),
+    "@vipentti/npm-release-flow": `file:${join(vendor, tgz)}`,
+  };
+  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n", "utf8");
+  // Regenerate the lockfile so npm ci resolves the file: dependency offline.
+  runSync("npm", ["install", "--package-lock-only", "--ignore-scripts"], {
+    cwd: fixture.consumer,
+    env,
+  });
 }

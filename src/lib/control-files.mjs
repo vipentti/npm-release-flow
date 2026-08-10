@@ -3,7 +3,18 @@
  * manifest/lockfile identity checks (blueprint §4, §9).
  */
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { git } from "./repo-state.mjs";
+import { CommandError, describeFailure } from "./errors.mjs";
+import { hasUnreleasedSection } from "./changelog.mjs";
+
+/**
+ * @typedef {Object} ControlCtx
+ * @property {string} cwd
+ * @property {NodeJS.ProcessEnv} [env]
+ */
 
 /**
  * The release-diff allowlist, fixed at exactly these three files
@@ -146,4 +157,103 @@ export function lockfileChangesBeyondVersion(beforeLock, afterLock) {
     normalized.packages[""].version = beforeLock.packages[""].version;
   }
   return changedKeysBeyond(beforeLock, normalized, ["version"]);
+}
+
+/**
+ * @param {string} cwd
+ * @param {string} name
+ * @returns {string | null}
+ */
+function tryReadFile(cwd, name) {
+  try {
+    return readFileSync(resolve(cwd, name), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} cwd
+ * @param {string} name
+ * @returns {Record<string, any> | null}
+ */
+function tryReadJson(cwd, name) {
+  const text = tryReadFile(cwd, name);
+  if (text === null) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validate the §4 mandatory consumer prerequisites (CHANGELOG.md with a
+ * `## [Unreleased]` section, a `release:verify` script, a committed
+ * lockfile). Missing prerequisites fail before any release verdict; the
+ * detect job enforces them, the verify job re-validates defensively.
+ *
+ * @param {ControlCtx} ctx
+ * @returns {string | null} The first problem, or null when all pass.
+ */
+export function mandatoryPrerequisiteProblem(ctx) {
+  const { cwd, env } = ctx;
+  const changelog = tryReadFile(cwd, "CHANGELOG.md");
+  if (changelog === null) {
+    return describeFailure({
+      checked: "the CHANGELOG.md control file",
+      found: "CHANGELOG.md is missing",
+      correction: "add a CHANGELOG.md with a ## [Unreleased] section",
+    });
+  }
+  if (!hasUnreleasedSection(changelog)) {
+    return describeFailure({
+      checked: "the ## [Unreleased] section in CHANGELOG.md",
+      found:
+        "the changelog has no bare ## [Unreleased] heading (or it has more than one)",
+      correction: "declare exactly one ## [Unreleased] section",
+    });
+  }
+  const pkg = tryReadJson(cwd, "package.json");
+  const verifyScript =
+    pkg !== null &&
+    typeof pkg.scripts === "object" &&
+    pkg.scripts !== null &&
+    typeof pkg.scripts["release:verify"] === "string" &&
+    pkg.scripts["release:verify"] !== "";
+  if (!verifyScript) {
+    return describeFailure({
+      checked: "the release:verify script in package.json",
+      found:
+        pkg === null
+          ? "package.json is missing or not valid JSON"
+          : "no non-empty scripts.release:verify is declared",
+      correction:
+        "declare the consumer's release verification under scripts.release:verify",
+    });
+  }
+  if (tryReadFile(cwd, "package-lock.json") === null) {
+    return describeFailure({
+      checked: "the package-lock.json lockfile",
+      found: "package-lock.json is missing",
+      correction: "generate and commit a lockfile",
+    });
+  }
+  try {
+    git(["ls-files", "--error-unmatch", "package-lock.json"], { cwd, env });
+  } catch (err) {
+    if (err instanceof CommandError && err.status === 1) {
+      return describeFailure({
+        checked: "that the lockfile is committed",
+        found: "package-lock.json exists but is not tracked by git",
+        correction: "git add package-lock.json and commit it",
+      });
+    }
+    return describeFailure({
+      checked: "that the lockfile is committed",
+      found: "git ls-files failed",
+      correction: "ensure the consumer tree is a git checkout",
+    });
+  }
+  return null;
 }

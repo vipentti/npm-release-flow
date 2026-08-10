@@ -19,9 +19,9 @@ import {
   describeFailure,
 } from "./lib/errors.mjs";
 import { git, gh, localRefSha } from "./lib/repo-state.mjs";
-import { hasUnreleasedSection } from "./lib/changelog.mjs";
 import { parseStableVersion } from "./lib/versions.mjs";
 import { classifyRelease } from "./lib/release-state.mjs";
+import { mandatoryPrerequisiteProblem } from "./lib/control-files.mjs";
 
 const zeroSha = "0000000000000000000000000000000000000000";
 const shaPattern = /^[0-9a-f]{40}$/;
@@ -121,70 +121,8 @@ function writeOutput(env, name, value) {
 
 /**
  * Validate the §4 mandatory consumer prerequisites before any verdict.
- *
- * @param {string} cwd
- * @param {NodeJS.ProcessEnv} env
- * @returns {string | null} The first problem, or null when all pass.
+ * (Shared implementation lives in control-files.mjs.)
  */
-function mandatoryPrerequisiteProblem(cwd, env) {
-  const changelog = tryReadFile(cwd, "CHANGELOG.md");
-  if (changelog === null) {
-    return describeFailure({
-      checked: "the CHANGELOG.md control file",
-      found: "CHANGELOG.md is missing",
-      correction: "add a CHANGELOG.md with a ## [Unreleased] section",
-    });
-  }
-  if (!hasUnreleasedSection(changelog)) {
-    return describeFailure({
-      checked: "the ## [Unreleased] section in CHANGELOG.md",
-      found:
-        "the changelog has no bare ## [Unreleased] heading (or it has more than one)",
-      correction: "declare exactly one ## [Unreleased] section",
-    });
-  }
-  const pkg = tryReadJson(cwd, "package.json");
-  const verifyScript =
-    pkg !== null &&
-    typeof pkg.scripts === "object" &&
-    pkg.scripts !== null &&
-    typeof pkg.scripts["release:verify"] === "string" &&
-    pkg.scripts["release:verify"] !== "";
-  if (!verifyScript) {
-    return describeFailure({
-      checked: "the release:verify script in package.json",
-      found:
-        pkg === null
-          ? "package.json is missing or not valid JSON"
-          : "no non-empty scripts.release:verify is declared",
-      correction: "declare the consumer's release verification under scripts.release:verify",
-    });
-  }
-  if (tryReadFile(cwd, "package-lock.json") === null) {
-    return describeFailure({
-      checked: "the package-lock.json lockfile",
-      found: "package-lock.json is missing",
-      correction: "generate and commit a lockfile",
-    });
-  }
-  try {
-    git(["ls-files", "--error-unmatch", "package-lock.json"], { cwd, env });
-  } catch (err) {
-    if (err instanceof CommandError && err.status === 1) {
-      return describeFailure({
-        checked: "that the lockfile is committed",
-        found: "package-lock.json exists but is not tracked by git",
-        correction: "git add package-lock.json and commit it",
-      });
-    }
-    return describeFailure({
-      checked: "that the lockfile is committed",
-      found: "git ls-files failed",
-      correction: "ensure the consumer tree is a git checkout",
-    });
-  }
-  return null;
-}
 
 /**
  * The §10 skew-marker read: resolve the merged PR number from the triggering
@@ -356,7 +294,7 @@ export async function detect(options = {}) {
   }
 
   // §4 mandatory prerequisites before any verdict.
-  const prerequisite = mandatoryPrerequisiteProblem(cwd, env);
+  const prerequisite = mandatoryPrerequisiteProblem(ctx);
   if (prerequisite !== null) {
     return fail(prerequisite);
   }

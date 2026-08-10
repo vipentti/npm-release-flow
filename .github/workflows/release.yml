@@ -107,12 +107,39 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Verify and pack the release
-        id: package
+      - name: Resolve the consumer's Node version
+        id: node-version
         shell: bash
         run: |
           set -euo pipefail
+          # §7: the verify job runs on the consumer's Node from
+          # package.json.engines.node, falling back to Node 22 when absent.
+          version=$(node -e "const p=require('./package.json');const e=p.engines?.node;if(!e){process.stdout.write('22');process.exit(0)}const m=String(e).match(/\d+/);process.stdout.write(m?m[0]:'22')")
+          echo "node-version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ steps.node-version.outputs.node-version }}
+          cache: npm
+
+      - name: Verify and pack the release
+        id: package
+        shell: bash
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+          CALLER_REPOSITORY: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
           node .npm-release-flow/src/verify.mjs
+
+      - name: Upload the packed artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-release-flow-${{ github.sha }}
+          path: .npm-release-flow-pack/
+          if-no-files-found: error
 
   release:
     # Protected. Environment approval gates it. Installs no project deps and
