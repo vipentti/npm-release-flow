@@ -64,6 +64,9 @@ jobs:
       - name: Detect release merge
         id: detect
         shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           node .npm-release-flow/src/detect.mjs

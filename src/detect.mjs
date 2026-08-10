@@ -1,0 +1,419 @@
+/**
+ * Detect job script (§5, §9, §10): classifies a push to main. Env-driven:
+ * `BEFORE_SHA` (the previous push tip), `GITHUB_SHA` (the triggering commit),
+ * `GITHUB_REPOSITORY` (owner/name), `GH_TOKEN` (gh auth). Binds HEAD to
+ * `GITHUB_SHA`, validates the §4 mandatory consumer prerequisites before any
+ * verdict, classifies per the §9 enumeration table, performs the §10
+ * skew-marker read only on the valid-release branch, and writes the declared
+ * outputs (`is-release`, `version`) to `GITHUB_OUTPUT`.
+ *
+ * Exit codes: 0 ordinary push or valid release, 1 hard fail. Ordinary pushes
+ * never touch the PR API.
+ */
+
+import { appendFileSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import {
+  CommandError,
+  describeFailure,
+} from "./lib/errors.mjs";
+import { git, gh, localRefSha } from "./lib/repo-state.mjs";
+import { hasUnreleasedSection } from "./lib/changelog.mjs";
+import { parseStableVersion } from "./lib/versions.mjs";
+import { classifyRelease } from "./lib/release-state.mjs";
+
+const zeroSha = "0000000000000000000000000000000000000000";
+const shaPattern = /^[0-9a-f]{40}$/;
+
+/**
+ * @typedef {Object} DetectOptions
+ * @property {string} [cwd] Repository root (the consumer tree).
+ * @property {NodeJS.ProcessEnv} [env] Environment (BEFORE_SHA, GITHUB_SHA,
+ *   GITHUB_REPOSITORY, GH_TOKEN, GITHUB_OUTPUT...).
+ * @property {(line: string) => void} [log] Output sink (diagnostics).
+ */
+
+/**
+ * @param {string} line
+ * @returns {void}
+ */
+function consoleError(line) {
+  console.error(line);
+}
+
+/**
+ * @param {string} cwd
+ * @param {string} name
+ * @returns {string | null}
+ */
+function tryReadFile(cwd, name) {
+  try {
+    return readFileSync(resolve(cwd, name), "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} cwd
+ * @param {string} name
+ * @returns {Record<string, any> | null}
+ */
+function tryReadJson(cwd, name) {
+  const text = tryReadFile(cwd, name);
+  if (text === null) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} cwd
+ * @param {string} rev
+ * @param {string} path
+ * @returns {string | null}
+ */
+function showFile(cwd, rev, path) {
+  try {
+    return git(["show", `${rev}:${path}`], { cwd }).stdout;
+  } catch (err) {
+    if (err instanceof CommandError && err.status === 128) return null;
+    throw err;
+  }
+}
+
+/**
+ * @param {string} cwd
+ * @param {string} rev
+ * @param {string} path
+ * @returns {Record<string, any> | null}
+ */
+function showJson(cwd, rev, path) {
+  const text = showFile(cwd, rev, path);
+  if (text === null) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write a GITHUB_OUTPUT entry (workflow convention: `name=value` lines).
+ *
+ * @param {NodeJS.ProcessEnv} env
+ * @param {string} name
+ * @param {string} value
+ */
+function writeOutput(env, name, value) {
+  const outputPath = env.GITHUB_OUTPUT;
+  const line = `${name}=${value}\n`;
+  if (outputPath) {
+    appendFileSync(outputPath, line, "utf8");
+  } else {
+    // Direct invocation (tests): fall back to stdout.
+    process.stdout.write(line);
+  }
+}
+
+/**
+ * Validate the §4 mandatory consumer prerequisites before any verdict.
+ *
+ * @param {string} cwd
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string | null} The first problem, or null when all pass.
+ */
+function mandatoryPrerequisiteProblem(cwd, env) {
+  const changelog = tryReadFile(cwd, "CHANGELOG.md");
+  if (changelog === null) {
+    return describeFailure({
+      checked: "the CHANGELOG.md control file",
+      found: "CHANGELOG.md is missing",
+      correction: "add a CHANGELOG.md with a ## [Unreleased] section",
+    });
+  }
+  if (!hasUnreleasedSection(changelog)) {
+    return describeFailure({
+      checked: "the ## [Unreleased] section in CHANGELOG.md",
+      found:
+        "the changelog has no bare ## [Unreleased] heading (or it has more than one)",
+      correction: "declare exactly one ## [Unreleased] section",
+    });
+  }
+  const pkg = tryReadJson(cwd, "package.json");
+  const verifyScript =
+    pkg !== null &&
+    typeof pkg.scripts === "object" &&
+    pkg.scripts !== null &&
+    typeof pkg.scripts["release:verify"] === "string" &&
+    pkg.scripts["release:verify"] !== "";
+  if (!verifyScript) {
+    return describeFailure({
+      checked: "the release:verify script in package.json",
+      found:
+        pkg === null
+          ? "package.json is missing or not valid JSON"
+          : "no non-empty scripts.release:verify is declared",
+      correction: "declare the consumer's release verification under scripts.release:verify",
+    });
+  }
+  if (tryReadFile(cwd, "package-lock.json") === null) {
+    return describeFailure({
+      checked: "the package-lock.json lockfile",
+      found: "package-lock.json is missing",
+      correction: "generate and commit a lockfile",
+    });
+  }
+  try {
+    git(["ls-files", "--error-unmatch", "package-lock.json"], { cwd, env });
+  } catch (err) {
+    if (err instanceof CommandError && err.status === 1) {
+      return describeFailure({
+        checked: "that the lockfile is committed",
+        found: "package-lock.json exists but is not tracked by git",
+        correction: "git add package-lock.json and commit it",
+      });
+    }
+    return describeFailure({
+      checked: "that the lockfile is committed",
+      found: "git ls-files failed",
+      correction: "ensure the consumer tree is a git checkout",
+    });
+  }
+  return null;
+}
+
+/**
+ * The §10 skew-marker read: resolve the merged PR number from the triggering
+ * commit's merge message, read the PR body via `gh api`, extract the
+ * `Kit: @vipentti/npm-release-flow@<version>` marker, and compare it with the
+ * kit checkout's version at `.npm-release-flow/package.json`. Any failure is
+ * a hard fail (fail closed).
+ *
+ * @param {string} version The released version.
+ * @param {string} mergeSubject The triggering commit's subject.
+ * @param {string} cwd
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string | null} The problem, or null when the marker agrees.
+ */
+function skewMarkerProblem(version, mergeSubject, cwd, env) {
+  const escaped = version.replace(/\./g, "\\.");
+  const mergeMatch = new RegExp(
+    `^Merge pull request #([0-9]+) from [^/\\s]+/[^/\\s]+/release/v${escaped}$`,
+  ).exec(mergeSubject);
+  if (!mergeMatch) {
+    return describeFailure({
+      checked: "the triggering commit's merge message for the merged PR number",
+      found: JSON.stringify(mergeSubject),
+      correction:
+        "the release merge must use GitHub's 'Merge pull request #N from <owner>/<repo>/release/v<version>' message",
+    });
+  }
+  const prNumber = mergeMatch[1];
+  const repository = env.GITHUB_REPOSITORY ?? "";
+  if (!/^[^/]+\/[^/]+$/.test(repository)) {
+    return describeFailure({
+      checked: "GITHUB_REPOSITORY",
+      found: JSON.stringify(repository),
+      correction: "the workflow must run in the consumer repository",
+    });
+  }
+  let body;
+  try {
+    body = gh(
+      [
+        "api",
+        `repos/${repository}/pulls/${prNumber}`,
+        "--jq",
+        ".body",
+      ],
+      { cwd, env },
+    ).stdout;
+  } catch (err) {
+    const detail =
+      err instanceof CommandError ? err.stderr.trim() : String(err);
+    return describeFailure({
+      checked: `the body of pull request #${prNumber} via gh api`,
+      found: detail || "gh api failed",
+      correction: "ensure the PR body is readable with the contents-read token",
+    });
+  }
+  const marker = /^Kit: @vipentti\/npm-release-flow@(\d+\.\d+\.\d+)$/m.exec(
+    body ?? "",
+  );
+  if (!marker) {
+    return describeFailure({
+      checked: "the Kit skew marker in the release PR body",
+      found: "no 'Kit: @vipentti/npm-release-flow@<version>' line is present",
+      correction:
+        "prepare the release with a current kit version so the marker is stamped",
+    });
+  }
+  const kitPackage = tryReadJson(cwd, ".npm-release-flow/package.json");
+  const kitVersion =
+    kitPackage !== null && typeof kitPackage.version === "string"
+      ? kitPackage.version
+      : null;
+  if (kitVersion === null) {
+    return describeFailure({
+      checked: "the kit checkout version at .npm-release-flow/package.json",
+      found: "the kit package.json is missing or has no version",
+      correction: "check out the kit at the pinned workflow SHA into .npm-release-flow",
+    });
+  }
+  if (marker[1] !== kitVersion) {
+    return describeFailure({
+      checked: "that the kit version that prepared the release equals the kit checkout version",
+      found: `PR body stamps ${marker[1]}, but .npm-release-flow/package.json is ${kitVersion}`,
+      correction:
+        "move both pins (CLI devDependency and workflow SHA) in a single upgrade PR",
+    });
+  }
+  return null;
+}
+
+/**
+ * Run the detect job script.
+ *
+ * @param {DetectOptions} [options]
+ * @returns {Promise<number>} 0 ordinary/valid, 1 hard fail.
+ */
+export async function detect(options = {}) {
+  const cwd = options.cwd ?? process.cwd();
+  const env = options.env ?? process.env;
+  const log = options.log ?? consoleError;
+  const ctx = { cwd, env };
+
+  /**
+   * @param {string} message
+   * @returns {number}
+   */
+  const fail = (message) => {
+    log(message);
+    return 1;
+  };
+
+  // --- Input validation (fail closed) ---
+
+  const afterSha = env.GITHUB_SHA ?? "";
+  if (!shaPattern.test(afterSha)) {
+    return fail(
+      describeFailure({
+        checked: "GITHUB_SHA",
+        found:
+          afterSha === ""
+            ? "the environment variable is not set"
+            : `${JSON.stringify(afterSha)} is not a 40-character SHA`,
+        correction: "run in a GitHub Actions workflow context",
+      }),
+    );
+  }
+  const beforeSha = env.BEFORE_SHA ?? "";
+  if (!shaPattern.test(beforeSha) || beforeSha === zeroSha) {
+    return fail(
+      describeFailure({
+        checked: "the previous push SHA (github.event.before)",
+        found:
+          beforeSha === ""
+            ? "BEFORE_SHA is not set"
+            : `${JSON.stringify(beforeSha)} is malformed or all-zero`,
+        correction: "run on a push event with a resolvable previous SHA",
+      }),
+    );
+  }
+
+  // Bind HEAD to the triggering SHA; an unresolvable SHA is a hard fail
+  // (§9: HEAD != triggering SHA).
+  let headSha;
+  try {
+    headSha = git(["rev-parse", "HEAD"], ctx).stdout.trim();
+  } catch {
+    return fail(
+      describeFailure({
+        checked: "HEAD",
+        found: "HEAD could not be resolved",
+        correction: "run inside the consumer git checkout",
+      }),
+    );
+  }
+  if (headSha !== afterSha) {
+    try {
+      git(["checkout", "--detach", afterSha], ctx);
+    } catch (err) {
+      const detail =
+        err instanceof CommandError ? err.stderr.trim() : String(err);
+      return fail(
+        describeFailure({
+          checked: "binding HEAD to the triggering SHA",
+          found: detail || "git checkout failed",
+          correction: "ensure the triggering SHA is present in the checkout",
+        }),
+      );
+    }
+  }
+
+  // §4 mandatory prerequisites before any verdict.
+  const prerequisite = mandatoryPrerequisiteProblem(cwd, env);
+  if (prerequisite !== null) {
+    return fail(prerequisite);
+  }
+
+  // --- §9 classification ---
+
+  const afterPkg = tryReadJson(cwd, "package.json");
+  const afterVersion =
+    afterPkg !== null && typeof afterPkg.version === "string"
+      ? afterPkg.version
+      : null;
+  const tagTarget =
+    afterVersion !== null && parseStableVersion(afterVersion) !== null
+      ? localRefSha(`refs/tags/v${afterVersion}`, ctx)
+      : null;
+
+  const verdict = classifyRelease({
+    beforeResolved: true,
+    headMatchesTrigger: true,
+    beforePkg: showJson(cwd, beforeSha, "package.json"),
+    afterPkg,
+    beforeLock: showJson(cwd, beforeSha, "package-lock.json"),
+    afterLock: tryReadJson(cwd, "package-lock.json"),
+    changedFiles: git(
+      ["diff", "--name-only", beforeSha, afterSha],
+      ctx,
+    )
+      .stdout.trim()
+      .split("\n")
+      .filter(Boolean),
+    changelog: tryReadFile(cwd, "CHANGELOG.md"),
+    tagTarget,
+    afterSha,
+  });
+
+  if (verdict.verdict === "ordinary") {
+    writeOutput(env, "is-release", "false");
+    writeOutput(env, "version", "");
+    return 0;
+  }
+  if (verdict.verdict === "valid") {
+    const mergeSubject = git(
+      ["log", "-1", "--format=%s", afterSha],
+      ctx,
+    ).stdout.trim();
+    const skewProblem = skewMarkerProblem(
+      /** @type {string} */ (verdict.version),
+      mergeSubject,
+      cwd,
+      env,
+    );
+    if (skewProblem !== null) {
+      return fail(skewProblem);
+    }
+    writeOutput(env, "is-release", "true");
+    writeOutput(env, "version", /** @type {string} */ (verdict.version));
+    return 0;
+  }
+  return fail(verdict.reasons[0] ?? "the push is not a valid release");
+}

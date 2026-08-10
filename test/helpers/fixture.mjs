@@ -130,6 +130,21 @@ if (argv[0] === "api") {
     console.error("gh-fixture: installation not found");
     process.exit(1);
   }
+  const pullsMatch = /^repos\\/[^/]+\\/[^/]+\\/pulls\\/([0-9]+)$/.exec(url);
+  if (pullsMatch) {
+    const body = state.prBodies?.[pullsMatch[1]];
+    if (typeof body === "string") {
+      const jqIndex = argv.indexOf("--jq");
+      if (jqIndex !== -1 && argv[jqIndex + 1] === ".body") {
+        console.log(body);
+        process.exit(0);
+      }
+      console.log(JSON.stringify({ body }));
+      process.exit(0);
+    }
+    console.error("gh-fixture: pull request not found");
+    process.exit(1);
+  }
   console.error("gh-fixture: unhandled api call: " + url);
   process.exit(1);
 }
@@ -230,10 +245,22 @@ export function createFixtureRepo() {
   );
   writeFileSync(join(consumer, "CHANGELOG.md"), CHANGELOG, "utf8");
   writeFileSync(join(consumer, "README.md"), "# Fixture consumer\n", "utf8");
+  // The guarded kit checkout the workflow creates at job time (detect reads
+  // its version for the §10 skew-marker comparison).
+  mkdirSync(join(consumer, ".npm-release-flow"), { recursive: true });
+  writeFileSync(
+    join(consumer, ".npm-release-flow", "package.json"),
+    JSON.stringify({ name: "@vipentti/npm-release-flow", version: "1.0.0" }, null, 2) + "\n",
+    "utf8",
+  );
 
   git(["init", "-b", "main"], { cwd: consumer });
   git(["config", "user.name", "Fixture"], { cwd: consumer });
   git(["config", "user.email", "fixture@example.com"], { cwd: consumer });
+  // Deterministic line endings: fixture files are written with LF, so the
+  // repo must not apply autocrlf conversions (the host's global git config
+  // must not leak into checkout comparisons).
+  git(["config", "core.autocrlf", "false"], { cwd: consumer });
   git(["add", "."], { cwd: consumer });
   git(["commit", "-m", "initial fixture commit"], { cwd: consumer });
   git(["init", "--bare", remote], { cwd: base });
@@ -324,7 +351,7 @@ export function setGhPrCreateUrl(fixture, url) {
  * Script the shim's repository identity and App-ID variable.
  *
  * @param {Fixture} fixture
- * @param {{ repo?: string, appId?: string, secrets?: string[], variables?: string[], environments?: string[], environmentRelease?: Record<string, any> | null, installationId?: number | null, authOk?: boolean }} values
+ * @param {{ repo?: string, appId?: string, secrets?: string[], variables?: string[], environments?: string[], environmentRelease?: Record<string, any> | null, installationId?: number | null, authOk?: boolean, prBodies?: Record<string, string> }} values
  */
 export function setGhRepoState(fixture, values) {
   const state = JSON.parse(readFileSync(fixture.ghState, "utf8"));
