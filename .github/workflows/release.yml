@@ -152,6 +152,18 @@ jobs:
       contents: write   # GitHub Release creation via github.token
       id-token: write   # npm Trusted Publishing, this job only
     steps:
+      # §9 step order is the trust boundary: the consumer checkout at the
+      # triggering SHA comes first (tag probe, revalidation, changelog access,
+      # and release mutations all need consumer git state at the workspace
+      # root), secrets load only after revalidation #1, and private material
+      # is never loaded on verify-only reruns.
+      - name: Check out the consumer tree at the triggering SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Guard the kit checkout path
         shell: bash
         run: |
@@ -170,8 +182,214 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Publish the release
+      # Central pinned toolchain (§7): exact Node 24.11.1 / npm 11.6.2, with
+      # the registry pinned to npmjs.com so the protected path can never be
+      # redirected by the consumer's npm configuration.
+      - name: Set up pinned Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.11.1
+          registry-url: https://registry.npmjs.org
+
+      - name: Assert the pinned toolchain
         shell: bash
         run: |
           set -euo pipefail
+          test "$(node --version)" = "v24.11.1" || {
+            echo "node $(node --version) does not match the v24.11.1 pin" >&2
+            exit 1
+          }
+          test "$(npm --version)" = "11.6.2" || {
+            echo "npm $(npm --version) does not match the 11.6.2 pin" >&2
+            exit 1
+          }
+
+      # Tag probe: observe the remote tag once, at job start (§9 boundary 4).
+      # The result is consumed by the release step; there is no pre-mutation
+      # re-probe.
+      - name: Probe the remote tag
+        id: tag-probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code origin "refs/tags/v${{ needs.detect.outputs.version }}" >/dev/null 2>&1; then
+            echo "tag-exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag-exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Revalidation #1: ancestry + control-file equality. GH_TOKEN only,
+      # before any secret loads (§6).
+      - name: Revalidate the release (1/2)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node .npm-release-flow/src/revalidate.mjs
+
+      # Download exactly the verify job's artifact (never the run's other
+      # artifacts) to a dedicated path.
+      - name: Download the packed artifact
+        id: download
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: npm-release-flow-${{ github.sha }}
+          path: .npm-release-flow-artifact
+
+      # Byte-for-byte artifact revalidation before any secret loads.
+      - name: Validate the packed artifact
+        shell: bash
+        env:
+          PACKAGE_SHA256: ${{ needs.verify.outputs.package-sha256 }}
+          ARTIFACT_DIR: ${{ steps.download.outputs.download-path }}
+        run: |
+          set -euo pipefail
+          node .npm-release-flow/src/validate-artifact.mjs
+
+      # Fresh GNUPGHOME: job-scoped, chmod 700, torn down unconditionally.
+      - name: Initialize the GPG home
+        shell: bash
+        run: |
+          set -euo pipefail
+          GNUPGHOME="$(mktemp -d)"
+          chmod 700 "$GNUPGHOME"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+
+      # Verify-only path (tag already exists): public key only, private
+      # material never loaded.
+      - name: Configure the public signing key
+        if: steps.tag-probe.outputs.tag-exists == 'true'
+        shell: bash
+        env:
+          NPM_RELEASE_FLOW_GPG_PUBLIC_KEY: ${{ secrets.NPM_RELEASE_FLOW_GPG_PUBLIC_KEY }}
+          NPM_RELEASE_FLOW_GPG_FINGERPRINT: ${{ vars.NPM_RELEASE_FLOW_GPG_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          test -n "$NPM_RELEASE_FLOW_GPG_PUBLIC_KEY" || {
+            echo "NPM_RELEASE_FLOW_GPG_PUBLIC_KEY is empty" >&2
+            exit 1
+          }
+          printf '%s\n' "$NPM_RELEASE_FLOW_GPG_PUBLIC_KEY" | gpg --batch --import
+          fingerprint="${NPM_RELEASE_FLOW_GPG_FINGERPRINT,,}"
+          if ! [[ "$fingerprint" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "NPM_RELEASE_FLOW_GPG_FINGERPRINT must be 40 hex characters" >&2
+            exit 1
+          fi
+          primary_count=$(gpg --batch --with-colons --list-keys "$fingerprint" 2>/dev/null | grep -c '^pub:' || true)
+          test "$primary_count" -eq 1 || {
+            echo "expected exactly one primary public key for $fingerprint, found $primary_count" >&2
+            exit 1
+          }
+          secret_count=$(gpg --batch --with-colons --list-secret-keys 2>/dev/null | grep -c '^sec:' || true)
+          test "$secret_count" -eq 0 || {
+            echo "secret keys must not be present on the verify-only path" >&2
+            exit 1
+          }
+
+      # Tag-creation path: import the private key into the fresh home, wire
+      # the gpg wrapper and git identity, and pin the signing key.
+      - name: Configure the signing key
+        if: steps.tag-probe.outputs.tag-exists == 'false'
+        shell: bash
+        env:
+          NPM_RELEASE_FLOW_GPG_PRIVATE_KEY: ${{ secrets.NPM_RELEASE_FLOW_GPG_PRIVATE_KEY }}
+          NPM_RELEASE_FLOW_GPG_PASSPHRASE: ${{ secrets.NPM_RELEASE_FLOW_GPG_PASSPHRASE }}
+          NPM_RELEASE_FLOW_GPG_FINGERPRINT: ${{ vars.NPM_RELEASE_FLOW_GPG_FINGERPRINT }}
+          NPM_RELEASE_FLOW_GIT_NAME: ${{ vars.NPM_RELEASE_FLOW_GIT_NAME }}
+          NPM_RELEASE_FLOW_GIT_EMAIL: ${{ vars.NPM_RELEASE_FLOW_GIT_EMAIL }}
+        run: |
+          set -euo pipefail
+          test -n "$NPM_RELEASE_FLOW_GPG_PRIVATE_KEY" || {
+            echo "NPM_RELEASE_FLOW_GPG_PRIVATE_KEY is empty" >&2
+            exit 1
+          }
+          test -n "$NPM_RELEASE_FLOW_GPG_PASSPHRASE" || {
+            echo "NPM_RELEASE_FLOW_GPG_PASSPHRASE is empty" >&2
+            exit 1
+          }
+          printf '%s\n' "$NPM_RELEASE_FLOW_GPG_PASSPHRASE" > "$GNUPGHOME/passphrase"
+          chmod 600 "$GNUPGHOME/passphrase"
+          printf '%s\n' "$NPM_RELEASE_FLOW_GPG_PRIVATE_KEY" | \
+            gpg --batch --pinentry-mode loopback --passphrase-file "$GNUPGHOME/passphrase" --import
+          fingerprint="${NPM_RELEASE_FLOW_GPG_FINGERPRINT,,}"
+          if ! [[ "$fingerprint" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "NPM_RELEASE_FLOW_GPG_FINGERPRINT must be 40 hex characters" >&2
+            exit 1
+          fi
+          secret_count=$(gpg --batch --with-colons --list-secret-keys 2>/dev/null | grep -c '^sec:' || true)
+          test "$secret_count" -eq 1 || {
+            echo "expected exactly one primary secret key, found $secret_count" >&2
+            exit 1
+          }
+          gpg --batch --list-secret-keys "$fingerprint" >/dev/null 2>&1 || {
+            echo "no secret key matches NPM_RELEASE_FLOW_GPG_FINGERPRINT" >&2
+            exit 1
+          }
+          cat > "$GNUPGHOME/gpg-wrapper" <<EOF
+          #!/bin/sh
+          exec gpg --batch --pinentry-mode loopback --passphrase-file "$GNUPGHOME/passphrase" "\$@"
+          EOF
+          chmod 700 "$GNUPGHOME/gpg-wrapper"
+          git config --global gpg.program "$GNUPGHOME/gpg-wrapper"
+          git config --global user.signingkey "$fingerprint"
+          git config --global user.name "$NPM_RELEASE_FLOW_GIT_NAME"
+          git config --global user.email "$NPM_RELEASE_FLOW_GIT_EMAIL"
+
+      # Revalidation #2, immediately before tag creation (TOCTOU guard).
+      - name: Revalidate the release (2/2)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node .npm-release-flow/src/revalidate.mjs
+
+      # Step-scoped non-empty assertion of the App private key immediately
+      # before the token is minted; the App token is the tag-push identity.
+      - name: Assert the App private key
+        if: steps.tag-probe.outputs.tag-exists == 'false'
+        shell: bash
+        env:
+          NPM_RELEASE_FLOW_APP_PRIVATE_KEY: ${{ secrets.NPM_RELEASE_FLOW_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$NPM_RELEASE_FLOW_APP_PRIVATE_KEY" || {
+            echo "NPM_RELEASE_FLOW_APP_PRIVATE_KEY is empty" >&2
+            exit 1
+          }
+
+      - name: Mint the release App token
+        if: steps.tag-probe.outputs.tag-exists == 'false'
+        id: release-app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.NPM_RELEASE_FLOW_APP_ID }}
+          private-key: ${{ secrets.NPM_RELEASE_FLOW_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      # The release mutations (boundaries 4-6, §9): kit code only, all inputs
+      # wired from workflow context. GNUPGHOME and PACKAGE_TARBALL are
+      # inherited through $GITHUB_ENV.
+      - name: Publish the release
+        shell: bash
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+          TAG_EXISTS: ${{ steps.tag-probe.outputs.tag-exists }}
+          NPM_RELEASE_FLOW_GPG_FINGERPRINT: ${{ vars.NPM_RELEASE_FLOW_GPG_FINGERPRINT }}
+          NPM_RELEASE_FLOW_APP_TOKEN: ${{ steps.release-app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
           node .npm-release-flow/src/release.mjs
+
+      # Unconditional key-material teardown.
+      - name: Clean up key material
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${GNUPGHOME:-}" ] && [ -d "$GNUPGHOME" ]; then
+            rm -f "$GNUPGHOME/passphrase"
+            rm -rf "$GNUPGHOME"
+          fi

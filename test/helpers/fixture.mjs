@@ -234,6 +234,19 @@ export function createFixtureRepo() {
   mkdirSync(consumer, { recursive: true });
   mkdirSync(shim, { recursive: true });
 
+  // Hermetic git config from the FIRST git call on: the fixture must never
+  // inherit the host machine's global/system git config. A host
+  // `commit.gpgSign = true` would otherwise sign every fixture commit with
+  // the host's real key and hang on the passphrase prompt.
+  const emptyGitConfig = join(base, "empty-gitconfig");
+  writeFileSync(emptyGitConfig, "", "utf8");
+  const hermeticEnv = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: emptyGitConfig,
+    GIT_CONFIG_SYSTEM: emptyGitConfig,
+  };
+  const gitCtx = { cwd: consumer, env: hermeticEnv };
+
   writeFileSync(
     join(consumer, "package.json"),
     JSON.stringify(packageJson(), null, 2) + "\n",
@@ -262,18 +275,18 @@ export function createFixtureRepo() {
     "utf8",
   );
 
-  git(["init", "-b", "main"], { cwd: consumer });
-  git(["config", "user.name", "Fixture"], { cwd: consumer });
-  git(["config", "user.email", "fixture@example.com"], { cwd: consumer });
+  git(["init", "-b", "main"], gitCtx);
+  git(["config", "user.name", "Fixture"], gitCtx);
+  git(["config", "user.email", "fixture@example.com"], gitCtx);
   // Deterministic line endings: fixture files are written with LF, so the
   // repo must not apply autocrlf conversions (the host's global git config
   // must not leak into checkout comparisons).
-  git(["config", "core.autocrlf", "false"], { cwd: consumer });
-  git(["add", "."], { cwd: consumer });
-  git(["commit", "-m", "initial fixture commit"], { cwd: consumer });
-  git(["init", "--bare", remote], { cwd: base });
-  git(["remote", "add", "origin", remote], { cwd: consumer });
-  git(["push", "-u", "origin", "main"], { cwd: consumer });
+  git(["config", "core.autocrlf", "false"], gitCtx);
+  git(["add", "."], gitCtx);
+  git(["commit", "-m", "initial fixture commit"], gitCtx);
+  git(["init", "--bare", remote], { cwd: base, env: hermeticEnv });
+  git(["remote", "add", "origin", remote], gitCtx);
+  git(["push", "-u", "origin", "main"], gitCtx);
 
   writeFileSync(join(shim, "gh-fixture.mjs"), ghFixtureScript, "utf8");
   if (process.platform === "win32") {
@@ -293,10 +306,6 @@ export function createFixtureRepo() {
   }
 
   writeFileSync(ghState, "{}", "utf8");
-  // Hermetic git config: the fixture must never inherit the host machine's
-  // global/system git config (e.g. a real user.signingkey).
-  const emptyGitConfig = join(base, "empty-gitconfig");
-  writeFileSync(emptyGitConfig, "", "utf8");
   return {
     base,
     consumer,
