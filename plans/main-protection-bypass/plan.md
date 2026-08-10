@@ -2,7 +2,7 @@
 
 ## Summary
 
-Amend the live `main protection` branch ruleset (created by the `initial-setup` planlet, task T5) so the repository owner (admin role) can self-merge while non-admins still require 1 approving review. The ruleset currently has `required_approving_review_count: 1` and no `bypass_actors`; GitHub never counts the PR author's approval, so it blocks the owner's own merges. The gate stays for everyone else.
+Amend the live `main protection` branch ruleset (created by the `initial-setup` planlet, task T5) so the repository owner (admin role) can self-merge while non-admins still require 1 approving review. The ruleset currently has `required_approving_review_count: 1` and no `bypass_actors`; GitHub never counts the PR author's approval, so it blocks the owner's own merges. `bypass_mode: "always"` is a ruleset-level bypass: it exempts admins from BOTH the review requirement and the required `ci` status check, while both rules remain enforced for non-admins. The gate stays for everyone else.
 
 ## Amendment record
 
@@ -11,7 +11,7 @@ Amends the `initial-setup` planlet's T5 ruleset body for `vipentti/npm-release-f
 ## Scope
 
 - Adds the admin-role `bypass_actors` entry to the single existing `main protection` ruleset (id `20612037`), `target: branch`, `enforcement: active`.
-- Pull-request rule parameters unchanged: `required_approving_review_count: 1`; `required_status_checks` with context `ci` still required.
+- Pull-request rule parameters unchanged: `required_approving_review_count: 1`; `required_status_checks` with context `ci` still configured. GitHub defines bypass permissions at ruleset level, not per rule, so the admin-role `always` bypass exempts admins from BOTH the review requirement and the `ci` status-check requirement; non-admins are still subject to both.
 - Everything else untouched: the tag rulesets (`release-tag creation`, `release-tag immutability`), the `release` Environment, and all product code.
 
 ## Approach
@@ -23,14 +23,14 @@ Amends the `initial-setup` planlet's T5 ruleset body for `vipentti/npm-release-f
 ## Acceptance Criteria
 
 - GET of ruleset `20612037` shows `bypass_actors` containing `{actor_id: 5, actor_type: "RepositoryRole", bypass_mode: "always"}`.
-- `enforcement` still `active`; `required_approving_review_count` still `1`; `required_status_checks` still contains context `ci`.
-- Owner (admin) can merge without a review; a non-admin still needs 1 approving review.
+- `enforcement` still `active`; `required_approving_review_count` still `1`; `required_status_checks` still contains context `ci` (both rules still enforced for non-admins; admins bypass both through the ruleset-level `always` bypass).
+- Owner (admin) can merge without a review and without the `ci` check; a non-admin still needs 1 approving review and the `ci` check.
 - `planlet validate main-protection-bypass` passes.
 - The planlet task checklist (T1-T3 checked) is committed and pushed with the PR head; task state does not trail committed state.
 
 ## Verification
 
-- Per task, read-only GET-based checks via `gh api` with `--jq` filters (handled in tasks.md): bypass actor present, full main config matches the expected amended T5 body, `ci` required status check still present, enforcement active, and both tag rulesets unchanged.
+- Per task, read-only GET-based checks via `gh api` with `--jq` filters (handled in tasks.md): bypass actor present, full main config matches the expected amended T5 body, `ci` required status check still present (configured, enforced for non-admins), enforcement active, and both tag rulesets unchanged.
 - The self-merge behavior itself is the purpose of the change; the acceptance criteria capture the observable state that establishes it.
 
 ## Risks and Considerations
