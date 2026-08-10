@@ -118,7 +118,7 @@ test(
           [merged]: [
             {
               number: 42,
-              state: "MERGED",
+              state: "closed",
               base: "main",
               head: "release/v1.2.3",
               body: "Kit: @vipentti/npm-release-flow@1.0.0\n\nRelease notes here.",

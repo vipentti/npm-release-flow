@@ -31,7 +31,8 @@ function setCommitPull(
   {
     version = "1.2.3",
     body = `Kit: @vipentti/npm-release-flow@${KIT_VERSION}`,
-    state = "MERGED",
+    // REST pull-request state: a merged PR reports "closed".
+    state = "closed",
     number = 12,
   } = {},
 ) {
@@ -319,7 +320,7 @@ test("detect: squash-merged release with the kit marker exits 0", async () => {
     const after = releaseCommit(ctx, { version: "1.2.3" });
     git(["push", "origin", "main"], { cwd: fixture.consumer, env: ctx.env });
     setCommitPull(ctx, after, {
-      state: "MERGED",
+      state: "closed",
       body: `Kit: @vipentti/npm-release-flow@${KIT_VERSION}\n\nSquashed release.`,
     });
     const code = await runDetect(ctx, before, after);
@@ -349,7 +350,7 @@ test("detect: valid release with no associated release PR is a hard fail", async
         [mergeSha]: [
           {
             number: 99,
-            state: "MERGED",
+            state: "closed",
             base: "main",
             head: "feature/other",
             body: "unrelated",

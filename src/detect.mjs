@@ -158,7 +158,7 @@ function skewMarkerProblem(version, afterSha, cwd, env) {
         `repos/${repository}/commits/${afterSha}/pulls`,
         "--paginate",
         "--jq",
-        `.[] | select(.state == "OPEN" or .state == "MERGED") | {number, base: .base.ref, head: .head.ref, body}`,
+        `.[] | {number, base: .base.ref, head: .head.ref, body}`,
       ],
       { cwd, env },
     );
@@ -176,7 +176,7 @@ function skewMarkerProblem(version, afterSha, cwd, env) {
       checked: `the pull requests associated with the triggering commit ${afterSha.slice(0, 8)} via gh api`,
       found: detail || "gh api failed",
       correction:
-        "ensure the commit's pull requests are readable with the contents-read token",
+        "ensure the commit's pull requests are readable with the pull-requests-read token",
     });
   }
   const releasePulls = pulls.filter(

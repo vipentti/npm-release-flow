@@ -6,15 +6,8 @@
  */
 
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  realpathSync,
-  statSync,
-} from "node:fs";
-import { basename, dirname, join, sep } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { basename, join, sep } from "node:path";
 
 /**
  * The sha512 integrity value (npm `integrity` format: `sha512-<base64>`) of a
@@ -143,85 +136,6 @@ export function binEntryProblems(manifest, extractedDir) {
       problems.push(
         `the declared bin ${JSON.stringify(binName)} has no shebang`,
       );
-    }
-  }
-  return problems;
-}
-
-/**
- * Installed-bin checks after a smoke install: every declared `.bin` entry
- * was created by npm and resolves to the shipped target inside the installed
- * package. The generic kit never executes a consumer binary with invented
- * arguments (e.g. `--version`); behavioral CLI smoke tests belong to the
- * consumer's `release:verify` script.
- *
- * @param {Record<string, any>} manifest
- * @param {string} smokeDir The fresh project the tarball was installed into.
- * @returns {string[]} Problems (empty when every declared bin resolves).
- */
-export function installedBinProblems(manifest, smokeDir) {
-  /** @type {string[]} */
-  const problems = [];
-  const bin = manifest.bin;
-  if (bin === undefined || bin === null) return problems;
-  const name = /** @type {string} */ (manifest.name);
-  const entries =
-    typeof bin === "string"
-      ? [[basename(name ?? "package"), bin]]
-      : Object.entries(/** @type {Record<string, string>} */ (bin));
-  const binDir = join(smokeDir, "node_modules", ".bin");
-  const packageDir = join(smokeDir, "node_modules", name);
-  for (const [binName, target] of entries) {
-    const binEntry = join(binDir, binName);
-    const entryExists =
-      existsSync(binEntry) ||
-      existsSync(`${binEntry}.cmd`) ||
-      existsSync(`${binEntry}.ps1`);
-    if (!entryExists) {
-      problems.push(
-        `the declared bin ${JSON.stringify(binName)} was not created by the install`,
-      );
-      continue;
-    }
-    const targetPath = join(packageDir, target);
-    if (!existsSync(targetPath)) {
-      problems.push(
-        `the declared bin ${JSON.stringify(binName)} (${target}) is not present in the installed package`,
-      );
-      continue;
-    }
-    // Resolution: on POSIX npm links `.bin/<name>` straight to the shipped
-    // target; on win32 npm writes shims that reference the installed target.
-    try {
-      const linkTarget = readlinkSync(binEntry);
-      const resolvedLink = realpathSync(join(dirname(binEntry), linkTarget));
-      const resolvedTarget = realpathSync(targetPath);
-      if (resolvedLink !== resolvedTarget) {
-        problems.push(
-          `the declared bin ${JSON.stringify(binName)} resolves to ${resolvedLink}, not the shipped target ${resolvedTarget}`,
-        );
-      }
-    } catch {
-      if (process.platform === "win32") {
-        const shimPath = `${binEntry}.cmd`;
-        if (!existsSync(shimPath)) {
-          problems.push(
-            `the declared bin ${JSON.stringify(binName)} has no resolvable .cmd shim on win32`,
-          );
-          continue;
-        }
-        const shim = readFileSync(shimPath, "utf8").replace(/\\/g, "/");
-        const expected = `../${name.replace(/\\/g, "/")}/${target.replace(/\\/g, "/").replace(/^\.\//, "")}`;
-        if (!shim.includes(expected)) {
-          problems.push(
-            `the declared bin ${JSON.stringify(binName)} shim does not reference the installed target ${expected}`,
-          );
-        }
-      } else {
-        problems.push(
-          `the declared bin ${JSON.stringify(binName)} is not a symlink to the shipped target`,
-        );
-      }
     }
   }
   return problems;

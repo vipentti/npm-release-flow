@@ -206,18 +206,17 @@ if (argv[0] === "api") {
     }
     const jqIndex = argv.indexOf("--jq");
     if (jqIndex !== -1) {
-      // Mirror detect's --jq filter: open/merged only, projected fields.
+      // Mirror detect's --jq projection of the REST response (no state
+      // filter: GitHub reports merged PRs with state "closed").
       for (const pr of pulls) {
-        if (pr.state === "OPEN" || pr.state === "MERGED") {
-          console.log(
-            JSON.stringify({
-              number: pr.number,
-              base: pr.base,
-              head: pr.head,
-              body: pr.body,
-            }),
-          );
-        }
+        console.log(
+          JSON.stringify({
+            number: pr.number,
+            base: pr.base,
+            head: pr.head,
+            body: pr.body,
+          }),
+        );
       }
     } else {
       console.log(JSON.stringify(pulls));

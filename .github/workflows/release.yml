@@ -30,9 +30,12 @@ permissions: {}
 jobs:
   detect:
     # Unprivileged. Classifies the push. Never touches release secrets.
+    # The commit-to-PR association read (commits/{sha}/pulls) needs
+    # pull-requests: read on top of contents: read.
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: read
     outputs:
       is-release: ${{ steps.detect.outputs.is-release }}
       version: ${{ steps.detect.outputs.version }}

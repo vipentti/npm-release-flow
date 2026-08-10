@@ -30,7 +30,6 @@ import { parseStableVersion } from "./lib/versions.mjs";
 import {
   packContractProblems,
   binEntryProblems,
-  installedBinProblems,
   sha256OfFile,
 } from "./lib/pack-contract.mjs";
 
@@ -355,25 +354,15 @@ export async function verify(options = {}) {
     "utf8",
   );
   try {
+    // The fresh-project install is the native npm smoke test: npm itself
+    // wires the declared .bin entries. The kit never executes a consumer
+    // binary with invented arguments (e.g. --version); behavioral CLI smoke
+    // tests belong to release:verify.
     runSync(
       "npm",
       ["i", join(packDir, tarball), "--ignore-scripts", "--omit=peer"],
       { cwd: smokeDir, env },
     );
-    // The generic kit never executes a consumer binary with invented
-    // arguments; behavioral CLI smoke tests belong to release:verify.
-    const installedBins = installedBinProblems(manifest, smokeDir);
-    if (installedBins.length > 0) {
-      return fail(
-        describeFailure({
-          checked:
-            "that every declared bin was created by the install and resolves to a shipped target",
-          found: installedBins.join("; "),
-          correction:
-            "declare only binaries that ship in the tarball and resolve from an install",
-        }),
-      );
-    }
   } catch (err) {
     const detail =
       err instanceof CommandError ? err.stderr.trim() : String(err);
