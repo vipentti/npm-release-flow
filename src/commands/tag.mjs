@@ -415,7 +415,9 @@ export async function tag(args, options = {}) {
 
   if (remoteTag !== null) {
     // Fetch the remote tag object and fully verify it.
-    git(["fetch", "origin", tagRef], ctx);
+    // Explicit refspec (destination written): a lightweight remote tag would
+    // not create a local ref with the implicit fetch form.
+    git(["fetch", "origin", `+${tagRef}:${tagRef}`], ctx);
     const localTagAfterFetch = localObjectSha(tagRef, ctx);
     if (localTagAfterFetch === null || localTagAfterFetch !== remoteTag) {
       throw new CliError(

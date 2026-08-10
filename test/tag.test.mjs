@@ -320,7 +320,10 @@ test("tag exits 1 for a divergent remote tag", async () => {
       tag({ version: "1.2.3", execute: false }, { cwd: fixture.consumer, env }),
       ExitCode.ERROR,
     );
-    assert.match(err.message, /the remote tag object against the local copy|not an annotated tag object|points at/);
+    assert.match(
+      err.message,
+      /the remote tag object against the local copy|not an annotated tag object|points at|it is a commit object/,
+    );
   } finally {
     fixture.cleanup();
   }

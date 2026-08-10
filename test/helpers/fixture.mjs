@@ -146,8 +146,30 @@ if (argv[0] === "api") {
     console.error("gh-fixture: pull request not found");
     process.exit(1);
   }
+  if (/^repos\\/[^/]+\\/[^/]+\\/git\\/tags\\/[0-9a-f]{40}$/.test(url)) {
+    const jqIndex = argv.indexOf("--jq");
+    if (jqIndex !== -1 && argv[jqIndex + 1] === ".verification.verified") {
+      console.log(state.tagVerification ?? "true");
+      process.exit(0);
+    }
+    console.log(JSON.stringify({ verification: { verified: state.tagVerification ?? "true" } }));
+    process.exit(0);
+  }
   console.error("gh-fixture: unhandled api call: " + url);
   process.exit(1);
+}
+if (argv[0] === "release" && argv[1] === "view") {
+  const tag = argv[2];
+  if (state.releases?.[tag]) {
+    console.log("present");
+    process.exit(0);
+  }
+  console.error("gh-fixture: release not found");
+  process.exit(1);
+}
+if (argv[0] === "release" && (argv[1] === "create" || argv[1] === "edit")) {
+  console.log("https://github.com/example/fixture-consumer/releases/" + argv[2]);
+  process.exit(0);
 }
 console.error("gh-fixture: unhandled invocation: " + argv.join(" "));
 process.exit(1);
@@ -368,7 +390,7 @@ export function setGhPrCreateUrl(fixture, url) {
  * Script the shim's repository identity and App-ID variable.
  *
  * @param {Fixture} fixture
- * @param {{ repo?: string, appId?: string, secrets?: string[], variables?: string[], environments?: string[], environmentRelease?: Record<string, any> | null, installationId?: number | null, authOk?: boolean, prBodies?: Record<string, string> }} values
+ * @param {{ repo?: string, appId?: string, secrets?: string[], variables?: string[], environments?: string[], environmentRelease?: Record<string, any> | null, installationId?: number | null, authOk?: boolean, prBodies?: Record<string, string>, releases?: Record<string, boolean>, tagVerification?: string }} values
  */
 export function setGhRepoState(fixture, values) {
   const state = JSON.parse(readFileSync(fixture.ghState, "utf8"));
@@ -464,6 +486,116 @@ const result = spawnSync("git", args, {
 });
 process.exit(result.status ?? 1);
 `;
+
+const npmFixtureScript = `import { readFileSync, writeFileSync, appendFileSync, existsSync } from "node:fs";
+
+const statePath = process.env.NPM_FIXTURE_STATE;
+const callsPath = process.env.NPM_FIXTURE_CALLS;
+function state() {
+  if (statePath && existsSync(statePath)) {
+    try {
+      return JSON.parse(readFileSync(statePath, "utf8"));
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+function save(s) {
+  if (statePath) writeFileSync(statePath, JSON.stringify(s, null, 2), "utf8");
+}
+const argv = process.argv.slice(2);
+if (callsPath) appendFileSync(callsPath, JSON.stringify(argv) + "\\n");
+if (argv[0] === "view") {
+  const s = state();
+  if (argv[2] === "versions") {
+    console.log(JSON.stringify(s.versions ?? []));
+    process.exit(0);
+  }
+  const key = argv[1]; // name@version
+  const manifest = s.views?.[key];
+  if (manifest !== undefined) {
+    console.log(JSON.stringify(manifest));
+    process.exit(0);
+  }
+  console.error("npm-fixture: E404 for " + key);
+  process.exit(1);
+}
+if (argv[0] === "publish") {
+  const s = state();
+  const name = s.publishName;
+  const version = s.publishVersion;
+  if (name && version && s.publishManifest) {
+    s.views = { ...(s.views ?? {}), [name + "@" + version]: s.publishManifest };
+    save(s);
+  }
+  process.exit(0);
+}
+console.error("npm-fixture: unhandled invocation: " + argv.join(" "));
+process.exit(1);
+`;
+
+/**
+ * Create a PATH shim for `npm` that records every invocation (JSON argv per
+ * line) and scripts `view`/`publish`/`versions` responses from a state file.
+ *
+ * @param {string} baseDir
+ * @returns {{ dir: string, stateFile: string, callsFile: string }}
+ */
+export function createNpmShim(baseDir) {
+  const dir = join(baseDir, "npm-shim");
+  const stateFile = join(baseDir, "npm-state.json");
+  const callsFile = join(baseDir, "npm-calls.log");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "npm-fixture.mjs"), npmFixtureScript, "utf8");
+  if (process.platform === "win32") {
+    writeFileSync(
+      join(dir, "npm.cmd"),
+      '@echo off\r\nnode "%~dp0npm-fixture.mjs" %*\r\nexit /b %ERRORLEVEL%\r\n',
+      "utf8",
+    );
+  } else {
+    const npmShim = join(dir, "npm");
+    writeFileSync(
+      npmShim,
+      '#!/bin/sh\nexec node "$(dirname "$0")/npm-fixture.mjs" "$@"\n',
+      "utf8",
+    );
+    chmodSync(npmShim, 0o755);
+  }
+  writeFileSync(stateFile, "{}", "utf8");
+  return { dir, stateFile, callsFile };
+}
+
+/**
+ * Read recorded npm invocations from a shim.
+ *
+ * @param {string} callsFile
+ * @returns {string[][]}
+ */
+export function npmCalls(callsFile) {
+  if (!existsSync(callsFile)) return [];
+  return readFileSync(callsFile, "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+/**
+ * Extend an env with extra PATH shim dirs (npm/git recorders) in front.
+ *
+ * @param {NodeJS.ProcessEnv} env
+ * @param {string[]} dirs
+ * @returns {NodeJS.ProcessEnv}
+ */
+export function prependPathDirs(env, dirs) {
+  const separator = process.platform === "win32" ? ";" : ":";
+  return {
+    ...env,
+    PATH: dirs.join(separator) + separator + env.PATH,
+  };
+}
 
 /**
  * Create a PATH shim for `git` that records every invocation (JSON argv per
