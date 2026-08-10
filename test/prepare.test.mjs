@@ -22,6 +22,7 @@ import {
   readConsumerFile,
   setGhPrCreateUrl,
   setGhPrs,
+  setRepoSigningKey,
 } from "./helpers/fixture.mjs";
 
 const hasGpg = gpgFixtureUsable();
@@ -51,9 +52,7 @@ async function expectCliError(promise, expectedExitCode) {
 function signingFixture() {
   const fixture = createFixtureRepo();
   const signing = createSigningHome(fixture.base);
-  git(["config", "user.signingkey", signing.fingerprint], {
-    cwd: fixture.consumer,
-  });
+  setRepoSigningKey(fixture, signing.fingerprint);
   const env = {
     ...envWithShim(fixture),
     GNUPGHOME: signing.home,

@@ -5,6 +5,8 @@
  * real git/gpg; no network.
  */
 
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   appendFileSync,
   chmodSync,
@@ -20,6 +22,49 @@ import { join } from "node:path";
 import { git } from "../../src/lib/repo-state.mjs";
 import { runSync } from "../../src/lib/spawn.mjs";
 import { cutChangelog } from "../../src/lib/changelog.mjs";
+
+/**
+ * Spawn `git` for fixture setup directly (no cmd.exe round-trip; Windows
+ * CreateProcess resolves `git.exe` from PATH). Fixture setup never runs
+ * with a git shim on PATH, so this is equivalent to the kit's shell-based
+ * `git()` helper, just faster. Falls back to the kit helper when the bare
+ * name does not resolve to an executable.
+ *
+ * @param {string[]} args
+ * @param {{ cwd: string, env: NodeJS.ProcessEnv }} ctx
+ * @returns {{ status: number, stdout: string, stderr: string, signal: NodeJS.Signals | null }}
+ */
+function gitDirect(args, ctx) {
+  const result = spawnSync("git", args, {
+    cwd: ctx.cwd,
+    env: ctx.env,
+    encoding: "utf8",
+  });
+  if (result.error) {
+    return git(args, ctx);
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `git ${args.join(" ")} exited with status ${String(result.status)}:\n${result.stderr}`,
+    );
+  }
+  return { status: 0, stdout: result.stdout, stderr: result.stderr, signal: null };
+}
+
+/**
+ * Append `[user] signingkey` straight into the fixture repo's .git/config
+ * (one file write instead of a `git config` subprocess spawn).
+ *
+ * @param {Fixture} fixture
+ * @param {string} fingerprint
+ */
+export function setRepoSigningKey(fixture, fingerprint) {
+  appendFileSync(
+    join(fixture.consumer, ".git", "config"),
+    `\n[user]\n\tsigningkey = ${fingerprint}\n`,
+    "utf8",
+  );
+}
 
 const CHANGELOG = `# Changelog
 
@@ -297,18 +342,33 @@ export function createFixtureRepo() {
     "utf8",
   );
 
-  git(["init", "-b", "main"], gitCtx);
-  git(["config", "user.name", "Fixture"], gitCtx);
-  git(["config", "user.email", "fixture@example.com"], gitCtx);
-  // Deterministic line endings: fixture files are written with LF, so the
-  // repo must not apply autocrlf conversions (the host's global git config
-  // must not leak into checkout comparisons).
-  git(["config", "core.autocrlf", "false"], gitCtx);
-  git(["add", "."], gitCtx);
-  git(["commit", "-m", "initial fixture commit"], gitCtx);
-  git(["init", "--bare", remote], { cwd: base, env: hermeticEnv });
-  git(["remote", "add", "origin", remote], gitCtx);
-  git(["push", "-u", "origin", "main"], gitCtx);
+  gitDirect(["init", "-b", "main"], gitCtx);
+  // The identity, line-ending policy, and origin remote are written straight
+  // into .git/config (three fewer subprocess spawns per fixture; the bytes
+  // match what `git config`/`git remote add` would write).
+  appendFileSync(
+    join(consumer, ".git", "config"),
+    [
+      "",
+      "[user]",
+      "\tname = Fixture",
+      "\temail = fixture@example.com",
+      // Deterministic line endings: fixture files are written with LF, so
+      // the repo must not apply autocrlf conversions (the host's global git
+      // config must not leak into checkout comparisons).
+      "[core]",
+      "\tautocrlf = false",
+      '[remote "origin"]',
+      `\turl = ${remote.replace(/\\/g, "\\\\")}`,
+      "\tfetch = +refs/heads/*:refs/remotes/origin/*",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  gitDirect(["add", "."], gitCtx);
+  gitDirect(["commit", "-m", "initial fixture commit"], gitCtx);
+  gitDirect(["init", "--bare", remote], { cwd: base, env: hermeticEnv });
+  gitDirect(["push", "-u", "origin", "main"], gitCtx);
 
   writeFileSync(join(shim, "gh-fixture.mjs"), ghFixtureScript, "utf8");
   if (process.platform === "win32") {
@@ -444,14 +504,15 @@ export function createReleaseMerge(fixture, { version, prNumber, owner = "exampl
   lock.version = version;
   lock.packages[""].version = version;
 
-  git(["checkout", "-b", branch], ctx);
+  gitDirect(["checkout", "-b", branch], ctx);
   writeFileSync(join(fixture.consumer, "package.json"), JSON.stringify(pkg, null, 2) + "\n", "utf8");
   writeFileSync(join(fixture.consumer, "package-lock.json"), JSON.stringify(lock, null, 2) + "\n", "utf8");
   writeFileSync(join(fixture.consumer, "CHANGELOG.md"), /** @type {string} */ (cut.content), "utf8");
-  git(["add", "."], ctx);
-  git(["commit", "-m", `release: ${version}`], ctx);
-  git(["checkout", "main"], ctx);
-  git(
+  // All three files are tracked and modified, so `commit -a` stages them
+  // without a separate `git add` spawn.
+  gitDirect(["commit", "-a", "-m", `release: ${version}`], ctx);
+  gitDirect(["checkout", "main"], ctx);
+  gitDirect(
     [
       "merge",
       "--no-ff",
@@ -461,9 +522,9 @@ export function createReleaseMerge(fixture, { version, prNumber, owner = "exampl
     ],
     ctx,
   );
-  git(["branch", "-D", branch], ctx);
-  git(["push", "origin", "main"], ctx);
-  return git(["rev-parse", "HEAD"], ctx).stdout.trim();
+  gitDirect(["branch", "-D", branch], ctx);
+  gitDirect(["push", "origin", "main"], ctx);
+  return gitDirect(["rev-parse", "HEAD"], ctx).stdout.trim();
 }
 
 const gitRecorderScript = `import { spawnSync } from "node:child_process";
@@ -645,39 +706,62 @@ export function gitCalls(callsFile) {
 /**
  * Create a throwaway GPG home with one unprotected ed25519 signing key.
  *
+ * The home is cached module-level: every fixture in the test process shares
+ * one identical throwaway keyring (the key is generated once per process in
+ * its own temp directory, never inside a fixture base, so a fixture cleanup
+ * cannot delete it). Key generation dominates the per-fixture signing cost
+ * (~200ms of gpg work per home on Windows), and the keyring is only ever
+ * read by the tests, so sharing is safe. The home is removed when the test
+ * process exits.
+ *
+ * @param {string} _baseDir Accepted for call-site compatibility; the shared
+ *   home does not live inside it.
+ * @returns {{ home: string, fingerprint: string }}
+ */
+let sharedSigningHome = null;
+function createSharedSigningHome() {
+  if (sharedSigningHome === null) {
+    const home = mkdtempSync(join(tmpdir(), "npmrf-gnupg-"));
+    const params = [
+      "%no-protection",
+      "Key-Type: eddsa",
+      "Key-Curve: ed25519",
+      "Key-Usage: sign",
+      "Name-Real: Fixture",
+      "Name-Email: fixture@example.com",
+      "Expire-Date: 0",
+      "%commit",
+      "",
+    ].join("\n");
+    runSync("gpg", ["--batch", "--homedir", home, "--gen-key"], {
+      input: params,
+    });
+    const list = runSync("gpg", [
+      "--batch",
+      "--homedir",
+      home,
+      "--list-secret-keys",
+      "--with-colons",
+    ]);
+    const fpr = list.stdout
+      .split("\n")
+      .find((line) => line.startsWith("fpr:"))
+      ?.split(":")[9];
+    if (!fpr) throw new Error("could not determine the fixture GPG fingerprint");
+    sharedSigningHome = { home, fingerprint: fpr };
+    process.on("exit", () => {
+      rmSync(home, { recursive: true, force: true });
+    });
+  }
+  return sharedSigningHome;
+}
+
+/**
  * @param {string} baseDir
  * @returns {{ home: string, fingerprint: string }}
  */
 export function createSigningHome(baseDir) {
-  const home = join(baseDir, "gnupghome");
-  mkdirSync(home, { recursive: true });
-  const params = [
-    "%no-protection",
-    "Key-Type: eddsa",
-    "Key-Curve: ed25519",
-    "Key-Usage: sign",
-    "Name-Real: Fixture",
-    "Name-Email: fixture@example.com",
-    "Expire-Date: 0",
-    "%commit",
-    "",
-  ].join("\n");
-  runSync("gpg", ["--batch", "--homedir", home, "--gen-key"], {
-    input: params,
-  });
-  const list = runSync("gpg", [
-    "--batch",
-    "--homedir",
-    home,
-    "--list-secret-keys",
-    "--with-colons",
-  ]);
-  const fpr = list.stdout
-    .split("\n")
-    .find((line) => line.startsWith("fpr:"))
-    ?.split(":")[9];
-  if (!fpr) throw new Error("could not determine the fixture GPG fingerprint");
-  return { home, fingerprint: fpr };
+  return createSharedSigningHome();
 }
 
 /**
@@ -693,18 +777,13 @@ let gpgFixtureUsableResult = null;
 export function gpgFixtureUsable() {
   if (gpgFixtureUsableResult !== null) return gpgFixtureUsableResult;
   try {
-    const base = mkdtempSync(join(tmpdir(), "npmrf-gpgcheck-"));
-    try {
-      const { home, fingerprint } = createSigningHome(base);
-      // The env-var path is what git commit -S uses; if gpg ignores it, the
-      // fixture key is not signable and the execute tests cannot run.
-      runSync("gpg", ["--batch", "--list-secret-keys", fingerprint], {
-        env: { ...process.env, GNUPGHOME: home },
-      });
-      gpgFixtureUsableResult = true;
-    } finally {
-      rmSync(base, { recursive: true, force: true });
-    }
+    const { home, fingerprint } = createSharedSigningHome();
+    // The env-var path is what git commit -S uses; if gpg ignores it, the
+    // fixture key is not signable and the execute tests cannot run.
+    runSync("gpg", ["--batch", "--list-secret-keys", fingerprint], {
+      env: { ...process.env, GNUPGHOME: home },
+    });
+    gpgFixtureUsableResult = true;
   } catch {
     gpgFixtureUsableResult = false;
   }
@@ -725,7 +804,9 @@ export function readConsumerFile(fixture, relPath) {
 /**
  * Pin the kit as the consumer's devDependency, installing from a local
  * vendor tarball (offline): the installed copy's version then drives the
- * §10 pin-agreement check.
+ * §10 pin-agreement check. The tarball is produced with a real `npm pack`;
+ * the lockfile is written directly in npm's own shape instead of running
+ * `npm install --package-lock-only` (~0.9s of npm resolution per call).
  *
  * @param {Fixture} fixture
  * @param {{ version: string, env?: NodeJS.ProcessEnv }} options
@@ -741,16 +822,31 @@ export function addKitDevDependency(fixture, { version, env }) {
   );
   runSync("npm", ["pack", "--pack-destination", vendor], { cwd: kitDir });
   const tgz = `vipentti-npm-release-flow-${version}.tgz`;
+  const tgzPath = join(vendor, tgz);
   const pkgPath = join(fixture.consumer, "package.json");
   const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+  const fileSpec = `file:${tgzPath}`;
   pkg.devDependencies = {
     ...(pkg.devDependencies ?? {}),
-    "@vipentti/npm-release-flow": `file:${join(vendor, tgz)}`,
+    "@vipentti/npm-release-flow": fileSpec,
   };
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n", "utf8");
-  // Regenerate the lockfile so npm ci resolves the file: dependency offline.
-  runSync("npm", ["install", "--package-lock-only", "--ignore-scripts"], {
-    cwd: fixture.consumer,
-    env,
-  });
+  // Regenerate the lockfile so npm ci resolves the file: dependency offline:
+  // mirror npm's exact lockfile shape (root entry carries the same file:
+  // spec as package.json; the node_modules entry resolves relative to the
+  // consumer with the tarball's integrity hash).
+  const lockPath = join(fixture.consumer, "package-lock.json");
+  const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+  lock.requires = true;
+  lock.packages[""].devDependencies = {
+    ...(lock.packages[""].devDependencies ?? {}),
+    "@vipentti/npm-release-flow": fileSpec,
+  };
+  lock.packages["node_modules/@vipentti/npm-release-flow"] = {
+    version,
+    resolved: `file:../vendor/${tgz}`,
+    integrity: `sha512-${createHash("sha512").update(readFileSync(tgzPath)).digest("base64")}`,
+    dev: true,
+  };
+  writeFileSync(lockPath, JSON.stringify(lock, null, 2) + "\n", "utf8");
 }

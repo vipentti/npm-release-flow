@@ -10,6 +10,7 @@ import {
   createSigningHome,
   envWithShim,
   setGhRepoState,
+  setRepoSigningKey,
 } from "./helpers/fixture.mjs";
 
 const ALL_SECRETS = [
@@ -31,9 +32,7 @@ const ALL_VARIABLES = [
 function goodCheckFixture() {
   const fixture = createFixtureRepo();
   const signing = createSigningHome(fixture.base);
-  git(["config", "user.signingkey", signing.fingerprint], {
-    cwd: fixture.consumer,
-  });
+  setRepoSigningKey(fixture, signing.fingerprint);
   setGhRepoState(fixture, {
     repo: "example/fixture-consumer",
     secrets: ALL_SECRETS,
@@ -332,9 +331,7 @@ test("check flags a missing commit-signing key", async () => {
 test("check flags a missing NPM_RELEASE_FLOW_GPG_FINGERPRINT and its key", async () => {
   const fixture = createFixtureRepo();
   const signing = createSigningHome(fixture.base);
-  git(["config", "user.signingkey", signing.fingerprint], {
-    cwd: fixture.consumer,
-  });
+  setRepoSigningKey(fixture, signing.fingerprint);
   setGhRepoState(fixture, {
     repo: "example/fixture-consumer",
     secrets: ALL_SECRETS,

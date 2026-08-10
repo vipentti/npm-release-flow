@@ -5,13 +5,13 @@ import { fileURLToPath } from "node:url";
 import { main } from "../bin/npm-release-flow.mjs";
 import { ExitCode } from "../src/lib/errors.mjs";
 import { runSync } from "../src/lib/spawn.mjs";
-import { git } from "../src/lib/repo-state.mjs";
 import {
   createFixtureRepo,
   createSigningHome,
   envWithShim,
   setGhPrs,
   setGhRepoState,
+  setRepoSigningKey,
 } from "./helpers/fixture.mjs";
 
 const binPath = fileURLToPath(new URL("../bin/npm-release-flow.mjs", import.meta.url));
@@ -44,9 +44,7 @@ function runBin(args, { cwd, env }) {
 function goodCheckFixture() {
   const fixture = createFixtureRepo();
   const signing = createSigningHome(fixture.base);
-  git(["config", "user.signingkey", signing.fingerprint], {
-    cwd: fixture.consumer,
-  });
+  setRepoSigningKey(fixture, signing.fingerprint);
   setGhRepoState(fixture, {
     repo: "example/fixture-consumer",
     secrets: ALL_SECRETS,
@@ -71,9 +69,7 @@ function goodCheckFixture() {
 function prepareFixture() {
   const fixture = createFixtureRepo();
   const signing = createSigningHome(fixture.base);
-  git(["config", "user.signingkey", signing.fingerprint], {
-    cwd: fixture.consumer,
-  });
+  setRepoSigningKey(fixture, signing.fingerprint);
   const env = {
     ...envWithShim(fixture),
     GNUPGHOME: signing.home,
