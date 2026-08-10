@@ -108,6 +108,27 @@ export function remoteMainSha(options = {}) {
 }
 
 /**
+ * The object SHA of a local ref without dereferencing (for annotated tags,
+ * the tag object itself, matching what `ls-remote` reports for the remote
+ * ref), or null when the ref does not exist.
+ *
+ * @param {string} ref
+ * @param {ExecOptions} [options]
+ * @returns {string | null}
+ */
+export function localObjectSha(ref, options = {}) {
+  let result;
+  try {
+    result = runSync("git", ["rev-parse", "--verify", "--quiet", ref], options);
+  } catch (err) {
+    if (err instanceof CommandError && err.status === 1) return null;
+    throw err;
+  }
+  const sha = result.stdout.trim();
+  return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+}
+
+/**
  * The configured `user.signingkey`, or null when unset.
  *
  * @param {ExecOptions} [options]

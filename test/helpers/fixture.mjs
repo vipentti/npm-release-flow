@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { git } from "../../src/lib/repo-state.mjs";
 import { runSync } from "../../src/lib/spawn.mjs";
+import { cutChangelog } from "../../src/lib/changelog.mjs";
 
 const CHANGELOG = `# Changelog
 
@@ -78,6 +79,18 @@ if (argv[0] === "pr" && argv[1] === "list") {
 if (argv[0] === "pr" && argv[1] === "create") {
   console.log(state.prCreateUrl ?? "https://github.com/example/fixture-consumer/pull/1");
   process.exit(0);
+}
+if (argv[0] === "repo" && argv[1] === "view") {
+  console.log(JSON.stringify({ nameWithOwner: state.repo ?? "example/fixture-consumer" }));
+  process.exit(0);
+}
+if (argv[0] === "api" && argv[1].startsWith("repos/") && argv[1].endsWith("/actions/variables/NPM_RELEASE_FLOW_APP_ID")) {
+  if (typeof state.appId === "string" && state.appId !== "") {
+    console.log(JSON.stringify({ value: state.appId }));
+    process.exit(0);
+  }
+  console.error("gh-fixture: variable not found");
+  process.exit(1);
 }
 console.error("gh-fixture: unhandled invocation: " + argv.join(" "));
 process.exit(1);
@@ -267,6 +280,19 @@ export function setGhPrCreateUrl(fixture, url) {
 }
 
 /**
+ * Script the shim's repository identity and App-ID variable.
+ *
+ * @param {Fixture} fixture
+ * @param {{ repo?: string, appId?: string }} values
+ */
+export function setGhRepoState(fixture, values) {
+  const state = JSON.parse(readFileSync(fixture.ghState, "utf8"));
+  if (values.repo !== undefined) state.repo = values.repo;
+  if (values.appId !== undefined) state.appId = values.appId;
+  writeFileSync(fixture.ghState, JSON.stringify(state, null, 2), "utf8");
+}
+
+/**
  * Recorded gh invocations (JSON-encoded argv arrays, one per line).
  *
  * @param {Fixture} fixture
@@ -275,6 +301,123 @@ export function setGhPrCreateUrl(fixture, url) {
 export function ghCalls(fixture) {
   if (!existsSync(fixture.callsFile)) return [];
   return readFileSync(fixture.callsFile, "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+/**
+ * Create a prepared release merge on the fixture's main, mirroring what the
+ * automated flow produces: a `release/v<version>` branch carrying the
+ * post-prepare control files, merged into main with the documented
+ * merge-message grammar. Pushes main and cleans up the release branch.
+ *
+ * @param {Fixture} fixture
+ * @param {{ version: string, prNumber: number, owner?: string }} options
+ * @param {NodeJS.ProcessEnv} [env] Fixture env for git calls.
+ * @returns {string} The merge commit SHA.
+ */
+export function createReleaseMerge(fixture, { version, prNumber, owner = "example/fixture-consumer" }, env) {
+  const ctx = { cwd: fixture.consumer, env };
+  const branch = `release/v${version}`;
+  const pkg = JSON.parse(readFileSync(join(fixture.consumer, "package.json"), "utf8"));
+  const lock = JSON.parse(readFileSync(join(fixture.consumer, "package-lock.json"), "utf8"));
+  const changelog = readFileSync(join(fixture.consumer, "CHANGELOG.md"), "utf8");
+  const compareUrl = "https://github.com/example/fixture-consumer/compare";
+  const cut = cutChangelog(changelog, {
+    previousVersion: pkg.version,
+    version,
+    date: "2026-08-01",
+    compareUrl,
+  });
+  if (!cut.ok) throw new Error(`fixture cut failed: ${cut.reason}`);
+  pkg.version = version;
+  lock.version = version;
+  lock.packages[""].version = version;
+
+  git(["checkout", "-b", branch], ctx);
+  writeFileSync(join(fixture.consumer, "package.json"), JSON.stringify(pkg, null, 2) + "\n", "utf8");
+  writeFileSync(join(fixture.consumer, "package-lock.json"), JSON.stringify(lock, null, 2) + "\n", "utf8");
+  writeFileSync(join(fixture.consumer, "CHANGELOG.md"), /** @type {string} */ (cut.content), "utf8");
+  git(["add", "."], ctx);
+  git(["commit", "-m", `release: ${version}`], ctx);
+  git(["checkout", "main"], ctx);
+  git(
+    [
+      "merge",
+      "--no-ff",
+      "-m",
+      `Merge pull request #${prNumber} from ${owner}/release/v${version}`,
+      branch,
+    ],
+    ctx,
+  );
+  git(["branch", "-D", branch], ctx);
+  git(["push", "origin", "main"], ctx);
+  return git(["rev-parse", "HEAD"], ctx).stdout.trim();
+}
+
+const gitRecorderScript = `import { spawnSync } from "node:child_process";
+import { appendFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const args = process.argv.slice(2);
+const logPath = process.env.GIT_FIXTURE_CALLS;
+if (logPath) appendFileSync(logPath, JSON.stringify(args) + "\\n");
+const shimDir = dirname(fileURLToPath(import.meta.url));
+const pathSep = process.platform === "win32" ? ";" : ":";
+const cleanPath = (process.env.PATH ?? "")
+  .split(pathSep)
+  .filter((p) => p !== shimDir)
+  .join(pathSep);
+const result = spawnSync("git", args, {
+  stdio: "inherit",
+  env: { ...process.env, PATH: cleanPath },
+});
+process.exit(result.status ?? 1);
+`;
+
+/**
+ * Create a PATH shim for `git` that records every invocation (JSON argv per
+ * line) and delegates to the real git.
+ *
+ * @param {string} baseDir
+ * @returns {{ dir: string, callsFile: string }}
+ */
+export function createGitRecorder(baseDir) {
+  const dir = join(baseDir, "git-recorder");
+  const callsFile = join(baseDir, "git-calls.log");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "git-fixture.mjs"), gitRecorderScript, "utf8");
+  if (process.platform === "win32") {
+    writeFileSync(
+      join(dir, "git.cmd"),
+      '@echo off\r\nnode "%~dp0git-fixture.mjs" %*\r\nexit /b %ERRORLEVEL%\r\n',
+      "utf8",
+    );
+  } else {
+    const gitShim = join(dir, "git");
+    writeFileSync(
+      gitShim,
+      '#!/bin/sh\nexec node "$(dirname "$0")/git-fixture.mjs" "$@"\n',
+      "utf8",
+    );
+    chmodSync(gitShim, 0o755);
+  }
+  return { dir, callsFile };
+}
+
+/**
+ * Read recorded git invocations from a recorder.
+ *
+ * @param {string} callsFile
+ * @returns {string[][]}
+ */
+export function gitCalls(callsFile) {
+  if (!existsSync(callsFile)) return [];
+  return readFileSync(callsFile, "utf8")
     .trim()
     .split("\n")
     .filter(Boolean)
