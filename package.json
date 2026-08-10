@@ -11,11 +11,7 @@
   "bin": {
     "npm-release-flow": "./bin/npm-release-flow.mjs"
   },
-  "files": [
-    "bin",
-    "src",
-    ".github/workflows/release.yml"
-  ],
+  "files": ["bin", "src", ".github/workflows/release.yml"],
   "license": "MIT",
   "repository": {
     "type": "git",

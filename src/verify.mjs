@@ -19,7 +19,7 @@ import {
   appendFileSync,
   readdirSync,
 } from "node:fs";
-import { basename, resolve, join } from "node:path";
+import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { describeFailure } from "./lib/errors.mjs";
@@ -30,6 +30,7 @@ import { parseStableVersion } from "./lib/versions.mjs";
 import {
   packContractProblems,
   binEntryProblems,
+  installedBinProblems,
   sha256OfFile,
 } from "./lib/pack-contract.mjs";
 
@@ -359,30 +360,19 @@ export async function verify(options = {}) {
       ["i", join(packDir, tarball), "--ignore-scripts", "--omit=peer"],
       { cwd: smokeDir, env },
     );
-    const bin = manifest.bin;
-    const binNames =
-      typeof bin === "string"
-        ? [basename(manifest.name ?? "package")]
-        : Object.keys(bin ?? {});
-    for (const binName of binNames) {
-      try {
-        const resolved = runSync(
-          resolve(smokeDir, "node_modules", ".bin", binName),
-          ["--version"],
-          { cwd: smokeDir, env },
-        );
-        if (resolved.status !== 0) {
-          throw new Error(`exit ${resolved.status}`);
-        }
-      } catch (err) {
-        return fail(
-          describeFailure({
-            checked: `that the declared bin ${JSON.stringify(binName)} resolves after installing the tarball`,
-            found: err instanceof Error ? err.message : "the bin did not run",
-            correction: "declare only binaries that resolve from an install",
-          }),
-        );
-      }
+    // The generic kit never executes a consumer binary with invented
+    // arguments; behavioral CLI smoke tests belong to release:verify.
+    const installedBins = installedBinProblems(manifest, smokeDir);
+    if (installedBins.length > 0) {
+      return fail(
+        describeFailure({
+          checked:
+            "that every declared bin was created by the install and resolves to a shipped target",
+          found: installedBins.join("; "),
+          correction:
+            "declare only binaries that ship in the tarball and resolve from an install",
+        }),
+      );
     }
   } catch (err) {
     const detail =

@@ -6,8 +6,8 @@
  */
 
 import { runSync } from "./spawn.mjs";
-import { CommandError, describeFailure } from "./errors.mjs";
-import { configuredSigningKey, gpgProgram } from "./repo-state.mjs";
+import { CliError, CommandError, describeFailure } from "./errors.mjs";
+import { configuredSigningKey, gpgProgram, git } from "./repo-state.mjs";
 
 /**
  * @typedef {object} SigningCtx
@@ -78,6 +78,74 @@ export function commitSigningState(ctx) {
     };
   }
   return { ok: true, key };
+}
+
+/**
+ * Fully verify a local annotated tag against the expected release commit:
+ * annotated object, target, subject `Release v<version>`, exactly one
+ * VALIDSIG whose primary fingerprint equals the configured fingerprint.
+ * Shared by the local break-glass `tag` command and the protected `release`
+ * job; returns the tag object SHA (without dereferencing, what `ls-remote`
+ * reports and what GitHub's API verifies).
+ *
+ * @param {{ version: string, targetSha: string, fingerprint: string, cwd: string, env: NodeJS.ProcessEnv }} input
+ * @returns {string} The tag object SHA.
+ */
+export function verifyTagObject({ version, targetSha, fingerprint, cwd, env }) {
+  const ctx = { cwd, env };
+  const tagRef = `refs/tags/v${version}`;
+  const type = git(["cat-file", "-t", tagRef], ctx).stdout.trim();
+  if (type !== "tag") {
+    throw new CliError(
+      describeFailure({
+        checked: `that v${version} is an annotated tag object`,
+        found: `it is a ${type} object`,
+        correction: "the tag must be annotated and signed",
+      }),
+    );
+  }
+  const target = git(["rev-parse", `${tagRef}^{commit}`], ctx).stdout.trim();
+  if (target !== targetSha) {
+    throw new CliError(
+      describeFailure({
+        checked: `that v${version} points at the release commit`,
+        found: `the tag points at ${target.slice(0, 8)}, not ${targetSha.slice(0, 8)}`,
+        correction: "the tag must point at the release commit",
+      }),
+    );
+  }
+  const tagBody = git(["cat-file", "tag", tagRef], ctx).stdout;
+  if (!tagBody.includes(`\n\nRelease v${version}\n`)) {
+    throw new CliError(
+      describeFailure({
+        checked: `that the tag subject is "Release v${version}"`,
+        found: "the tag message differs",
+        correction: "recreate the tag with the subject 'Release v<version>'",
+      }),
+    );
+  }
+  const raw = git(["verify-tag", "--raw", tagRef], ctx).stderr;
+  const validsigs = [...raw.matchAll(/\[GNUPG:\] VALIDSIG ([0-9A-Fa-f]{40})/g)];
+  if (validsigs.length !== 1) {
+    throw new CliError(
+      describeFailure({
+        checked: `that v${version} has exactly one valid GPG signature`,
+        found: `${validsigs.length} VALIDSIG line(s)`,
+        correction: "the tag must be signed by exactly one key",
+      }),
+    );
+  }
+  if (validsigs[0][1].toLowerCase() !== fingerprint) {
+    throw new CliError(
+      describeFailure({
+        checked:
+          "that the signature's primary fingerprint matches NPM_RELEASE_FLOW_GPG_FINGERPRINT",
+        found: validsigs[0][1],
+        correction: "the tag must be signed with the configured release key",
+      }),
+    );
+  }
+  return git(["rev-parse", tagRef], ctx).stdout.trim();
 }
 
 /**

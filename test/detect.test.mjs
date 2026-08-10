@@ -18,6 +18,33 @@ import {
 const KIT_VERSION = "1.0.0";
 
 /**
+ * Script the gh shim's PR association for a triggering commit (the
+ * `commits/{sha}/pulls` read detect performs on the valid-release branch).
+ *
+ * @param {ReturnType<typeof detectFixture>} ctx
+ * @param {string} sha
+ * @param {{ version?: string, body?: string, state?: string, number?: number }} [options]
+ */
+function setCommitPull(
+  ctx,
+  sha,
+  {
+    version = "1.2.3",
+    body = `Kit: @vipentti/npm-release-flow@${KIT_VERSION}`,
+    state = "MERGED",
+    number = 12,
+  } = {},
+) {
+  setGhRepoState(ctx.fixture, {
+    commitPulls: {
+      [sha]: [
+        { number, state, base: "main", head: `release/v${version}`, body },
+      ],
+    },
+  });
+}
+
+/**
  * Fixture wired for detect runs: GITHUB_OUTPUT to a temp file, repository
  * identity set, and a kit checkout at `.npm-release-flow`.
  */
@@ -165,10 +192,8 @@ test("detect: valid release with the kit marker exits 0 and writes the version",
     const before = git(["rev-parse", `${mergeSha}^`], {
       cwd: ctx.fixture.consumer,
     }).stdout.trim();
-    setGhRepoState(ctx.fixture, {
-      prBodies: {
-        12: `Kit: @vipentti/npm-release-flow@${KIT_VERSION}\n\nRelease notes here.`,
-      },
+    setCommitPull(ctx, mergeSha, {
+      body: `Kit: @vipentti/npm-release-flow@${KIT_VERSION}\n\nRelease notes here.`,
     });
     const code = await runDetect(ctx, before, mergeSha);
     assert.equal(code, 0);
@@ -181,11 +206,10 @@ test("detect: valid release with the kit marker exits 0 and writes the version",
       1,
       "exactly one PR API call on the valid-release branch",
     );
-    assert.deepEqual(calls[0].slice(0, 4), [
+    assert.deepEqual(calls[0].slice(0, 3), [
       "api",
-      "repos/example/fixture-consumer/pulls/12",
-      "--jq",
-      ".body",
+      `repos/example/fixture-consumer/commits/${mergeSha}/pulls`,
+      "--paginate",
     ]);
   } finally {
     ctx.fixture.cleanup();
@@ -203,8 +227,8 @@ test("detect: skew-marker mismatch is a hard fail", async () => {
     const before = git(["rev-parse", `${mergeSha}^`], {
       cwd: ctx.fixture.consumer,
     }).stdout.trim();
-    setGhRepoState(ctx.fixture, {
-      prBodies: { 12: "Kit: @vipentti/npm-release-flow@2.0.0\n" },
+    setCommitPull(ctx, mergeSha, {
+      body: "Kit: @vipentti/npm-release-flow@2.0.0\n",
     });
     const problems = [];
     const code = await detect({
@@ -238,7 +262,7 @@ test("detect: missing skew marker is a hard fail", async () => {
     const before = git(["rev-parse", `${mergeSha}^`], {
       cwd: ctx.fixture.consumer,
     }).stdout.trim();
-    setGhRepoState(ctx.fixture, { prBodies: { 12: "Just some notes.\n" } });
+    setCommitPull(ctx, mergeSha, { body: "Just some notes.\n" });
     const problems = [];
     const code = await detect({
       cwd: ctx.fixture.consumer,
@@ -255,7 +279,7 @@ test("detect: missing skew marker is a hard fail", async () => {
   }
 });
 
-test("detect: unreadable PR body is a hard fail", async () => {
+test("detect: unreadable PR association is a hard fail", async () => {
   const ctx = detectFixture();
   try {
     const mergeSha = createReleaseMerge(
@@ -266,7 +290,7 @@ test("detect: unreadable PR body is a hard fail", async () => {
     const before = git(["rev-parse", `${mergeSha}^`], {
       cwd: ctx.fixture.consumer,
     }).stdout.trim();
-    // No prBodies entry: the shim's gh api call fails.
+    // No commitPulls entry: the shim's gh api call fails.
     const problems = [];
     const code = await detect({
       cwd: ctx.fixture.consumer,
@@ -276,46 +300,78 @@ test("detect: unreadable PR body is a hard fail", async () => {
     assert.equal(code, 1);
     assert.match(
       problems.join("\n"),
-      /Checked: the body of pull request #12 via gh api\./,
+      /Checked: the pull requests associated with the triggering commit .* via gh api\./,
     );
   } finally {
     ctx.fixture.cleanup();
   }
 });
 
-test("detect: unparseable merge message on a valid release is a hard fail", async () => {
+test("detect: squash-merged release with the kit marker exits 0", async () => {
   const ctx = detectFixture();
   try {
     const { fixture } = ctx;
-    const branch = "release/v1.2.3";
-    git(["checkout", "-b", branch], { cwd: fixture.consumer, env: ctx.env });
-    releaseCommit(ctx, { version: "1.2.3" });
-    git(["checkout", "main"], { cwd: fixture.consumer, env: ctx.env });
-    git(["merge", "--no-ff", "-m", "Merge branch 'release/v1.2.3'", branch], {
+    // A squash merge writes the release state straight onto main as a single
+    // commit; detect must classify it without any merge-message grammar.
+    const before = git(["rev-parse", "HEAD"], {
       cwd: fixture.consumer,
-      env: ctx.env,
-    });
-    git(["branch", "-D", branch], { cwd: fixture.consumer, env: ctx.env });
+    }).stdout.trim();
+    const after = releaseCommit(ctx, { version: "1.2.3" });
     git(["push", "origin", "main"], { cwd: fixture.consumer, env: ctx.env });
-    const mergeSha = git(["rev-parse", "HEAD"], {
-      cwd: fixture.consumer,
-    }).stdout.trim();
+    setCommitPull(ctx, after, {
+      state: "MERGED",
+      body: `Kit: @vipentti/npm-release-flow@${KIT_VERSION}\n\nSquashed release.`,
+    });
+    const code = await runDetect(ctx, before, after);
+    assert.equal(code, 0);
+    const out = ctx.output();
+    assert.match(out, /^is-release=true$/m);
+    assert.match(out, /^version=1\.2\.3$/m);
+  } finally {
+    ctx.fixture.cleanup();
+  }
+});
+
+test("detect: valid release with no associated release PR is a hard fail", async () => {
+  const ctx = detectFixture();
+  try {
+    const mergeSha = createReleaseMerge(
+      ctx.fixture,
+      { version: "1.2.3", prNumber: 12 },
+      ctx.env,
+    );
     const before = git(["rev-parse", `${mergeSha}^`], {
-      cwd: fixture.consumer,
+      cwd: ctx.fixture.consumer,
     }).stdout.trim();
-    setGhRepoState(fixture, {
-      prBodies: { 12: `Kit: @vipentti/npm-release-flow@${KIT_VERSION}` },
+    // Associated PRs exist but none is the expected release/v1.2.3 head.
+    setGhRepoState(ctx.fixture, {
+      commitPulls: {
+        [mergeSha]: [
+          {
+            number: 99,
+            state: "MERGED",
+            base: "main",
+            head: "feature/other",
+            body: "unrelated",
+          },
+        ],
+      },
     });
     const problems = [];
     const code = await detect({
-      cwd: fixture.consumer,
+      cwd: ctx.fixture.consumer,
       env: { ...ctx.env, BEFORE_SHA: before, GITHUB_SHA: mergeSha },
       log: (line) => problems.push(line),
     });
     assert.equal(code, 1);
+    const text = problems.join("\n");
     assert.match(
-      problems.join("\n"),
-      /Checked: the triggering commit's merge message for the merged PR number\./,
+      text,
+      /Checked: the pull request for release\/v1\.2\.3 among the commits associated with/,
+    );
+    assert.match(
+      text,
+      /Found: no associated pull request has head release\/v1\.2\.3 on base main\./,
     );
   } finally {
     ctx.fixture.cleanup();

@@ -196,6 +196,34 @@ if (argv[0] === "api") {
     console.error("gh-fixture: pull request not found");
     process.exit(1);
   }
+  const commitPullsMatch = /^repos\\/[^/]+\\/[^/]+\\/commits\\/([0-9a-f]{40})\\/pulls$/.exec(url);
+  if (commitPullsMatch) {
+    const sha = commitPullsMatch[1];
+    const pulls = state.commitPulls?.[sha];
+    if (pulls === undefined) {
+      console.error("gh-fixture: no pull requests recorded for commit " + sha);
+      process.exit(1);
+    }
+    const jqIndex = argv.indexOf("--jq");
+    if (jqIndex !== -1) {
+      // Mirror detect's --jq filter: open/merged only, projected fields.
+      for (const pr of pulls) {
+        if (pr.state === "OPEN" || pr.state === "MERGED") {
+          console.log(
+            JSON.stringify({
+              number: pr.number,
+              base: pr.base,
+              head: pr.head,
+              body: pr.body,
+            }),
+          );
+        }
+      }
+    } else {
+      console.log(JSON.stringify(pulls));
+    }
+    process.exit(0);
+  }
   if (/^repos\\/[^/]+\\/[^/]+\\/git\\/tags\\/[0-9a-f]{40}$/.test(url)) {
     const jqIndex = argv.indexOf("--jq");
     if (jqIndex !== -1 && argv[jqIndex + 1] === ".verification.verified") {
@@ -495,7 +523,7 @@ export function setGhPrCreateUrl(fixture, url) {
  * Script the shim's repository identity and App-ID variable.
  *
  * @param {Fixture} fixture
- * @param {{ repo?: string, appId?: string, secrets?: string[], variables?: string[], environments?: string[], environmentRelease?: Record<string, any> | null, installationId?: number | null, authOk?: boolean, prBodies?: Record<string, string>, releases?: Record<string, boolean>, tagVerification?: string }} values
+ * @param {{ repo?: string, appId?: string, secrets?: string[], variables?: string[], environments?: string[], environmentRelease?: Record<string, any> | null, installationId?: number | null, authOk?: boolean, prBodies?: Record<string, string>, commitPulls?: Record<string, Array<{ number: number, state: string, base: string, head: string, body?: string | null }>>, releases?: Record<string, boolean>, tagVerification?: string }} values
  */
 export function setGhRepoState(fixture, values) {
   const state = JSON.parse(readFileSync(fixture.ghState, "utf8"));

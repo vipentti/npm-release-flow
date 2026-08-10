@@ -2,10 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
+  existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -14,6 +16,7 @@ import { verify, kitRepository } from "../src/verify.mjs";
 import {
   packContractProblems,
   binEntryProblems,
+  installedBinProblems,
   integrityOfFile,
   sha256OfFile,
 } from "../src/lib/pack-contract.mjs";
@@ -153,6 +156,79 @@ test("pack-contract: bin-entry checks accept a shebang file and reject missing/e
     assert.ok(
       binEntryProblems(missing, join(dir, "package")).some((p) =>
         /does not exist/.test(p),
+      ),
+    );
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+test("installedBinProblems: accepts a created and resolving entry, rejects missing entries and unresolving shims", () => {
+  const ctx = createTempBase();
+  try {
+    const smokeDir = join(ctx.base, "smoke");
+    const binDir = join(smokeDir, "node_modules", ".bin");
+    const packageDir = join(smokeDir, "node_modules", "fixture-consumer");
+    mkdirSync(binDir, { recursive: true });
+    mkdirSync(join(packageDir, "bin"), { recursive: true });
+    const manifest = {
+      name: "fixture-consumer",
+      bin: { "fixture-tool": "./bin/tool.mjs" },
+    };
+    writeFileSync(
+      join(packageDir, "bin", "tool.mjs"),
+      "#!/usr/bin/env node\nconsole.log(1);\n",
+    );
+
+    if (process.platform === "win32") {
+      // npm's win32 layout: a .cmd shim referencing the installed target.
+      writeFileSync(
+        join(binDir, "fixture-tool.cmd"),
+        '@ECHO off\r\nSET "_prog=node"\r\n"%_prog%"  "%dp0%\\..\\fixture-consumer\\bin\\tool.mjs" %*\r\n',
+      );
+      assert.deepEqual(installedBinProblems(manifest, smokeDir), []);
+      // A shim referencing a different target is a problem.
+      writeFileSync(
+        join(binDir, "fixture-tool.cmd"),
+        '@ECHO off\r\n"%_prog%"  "%dp0%\\..\\fixture-consumer\\bin\\other.mjs" %*\r\n',
+      );
+      assert.ok(
+        installedBinProblems(manifest, smokeDir).some((p) =>
+          /shim does not reference the installed target/.test(p),
+        ),
+      );
+      rmSync(join(binDir, "fixture-tool.cmd"));
+    } else {
+      // POSIX: npm links .bin/<name> straight to the shipped target.
+      try {
+        symlinkSync(
+          join("..", "fixture-consumer", "bin", "tool.mjs"),
+          join(binDir, "fixture-tool"),
+        );
+      } catch {
+        // No symlink privilege in this environment: skip the link checks.
+      }
+      if (existsSync(join(binDir, "fixture-tool"))) {
+        assert.deepEqual(installedBinProblems(manifest, smokeDir), []);
+        rmSync(join(binDir, "fixture-tool"));
+      }
+    }
+
+    // No .bin entry at all: not created by the install.
+    assert.ok(
+      installedBinProblems(manifest, smokeDir).some((p) =>
+        /was not created by the install/.test(p),
+      ),
+    );
+    // The shipped target missing from the installed package is a problem.
+    writeFileSync(
+      join(binDir, "fixture-tool"),
+      "#!/bin/sh\nexec node \"$(dirname \"$0\")/../fixture-consumer/bin/tool.mjs\" \"$@\"\n",
+    );
+    rmSync(join(packageDir, "bin", "tool.mjs"));
+    assert.ok(
+      installedBinProblems(manifest, smokeDir).some((p) =>
+        /is not present in the installed package/.test(p),
       ),
     );
   } finally {

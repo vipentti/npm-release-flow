@@ -114,8 +114,16 @@ test(
       }).stdout.trim();
       const merged = await mergeReleaseBranch(fixture, env, branchSha);
       setGhRepoState(fixture, {
-        prBodies: {
-          42: "Kit: @vipentti/npm-release-flow@1.0.0\n\nRelease notes here.",
+        commitPulls: {
+          [merged]: [
+            {
+              number: 42,
+              state: "MERGED",
+              base: "main",
+              head: "release/v1.2.3",
+              body: "Kit: @vipentti/npm-release-flow@1.0.0\n\nRelease notes here.",
+            },
+          ],
         },
       });
       const detectEnv = {

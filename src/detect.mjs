@@ -124,32 +124,22 @@ function writeOutput(env, name, value) {
  */
 
 /**
- * The skew-marker read: resolve the merged PR number from the triggering
- * commit's merge message, read the PR body via `gh api`, extract the
- * `Kit: @vipentti/npm-release-flow@<version>` marker, and compare it with the
- * kit checkout's version at `.npm-release-flow/package.json`. Any failure is
- * a hard fail (fail closed).
+ * The skew-marker read: resolve the pull requests associated with the
+ * triggering commit via `gh api .../commits/{sha}/pulls`, select the one
+ * whose head is the expected `release/v<version>` branch (base main), read
+ * its body, extract the `Kit: @vipentti/npm-release-flow@<version>` marker,
+ * and compare it with the kit checkout's version at
+ * `.npm-release-flow/package.json`. Release identity comes from the release
+ * classification, not the commit message; the PR association is needed only
+ * for the skew marker. Any failure is a hard fail (fail closed).
  *
  * @param {string} version The released version.
- * @param {string} mergeSubject The triggering commit's subject.
+ * @param {string} afterSha The triggering commit SHA.
  * @param {string} cwd
  * @param {NodeJS.ProcessEnv} env
  * @returns {string | null} The problem, or null when the marker agrees.
  */
-function skewMarkerProblem(version, mergeSubject, cwd, env) {
-  const escaped = version.replace(/\./g, "\\.");
-  const mergeMatch = new RegExp(
-    `^Merge pull request #([0-9]+) from [^/\\s]+/[^/\\s]+/release/v${escaped}$`,
-  ).exec(mergeSubject);
-  if (!mergeMatch) {
-    return describeFailure({
-      checked: "the triggering commit's merge message for the merged PR number",
-      found: JSON.stringify(mergeSubject),
-      correction:
-        "the release merge must use GitHub's 'Merge pull request #N from <owner>/<repo>/release/v<version>' message",
-    });
-  }
-  const prNumber = mergeMatch[1];
+function skewMarkerProblem(version, afterSha, cwd, env) {
   const repository = env.GITHUB_REPOSITORY ?? "";
   if (!/^[^/]+\/[^/]+$/.test(repository)) {
     return describeFailure({
@@ -158,23 +148,54 @@ function skewMarkerProblem(version, mergeSubject, cwd, env) {
       correction: "the workflow must run in the consumer repository",
     });
   }
-  let body;
+  const expectedHead = `release/v${version}`;
+  /** @type {Array<{ number: number, state: string, base: string, head: string, body: string | null }>} */
+  let pulls;
   try {
-    body = gh(
-      ["api", `repos/${repository}/pulls/${prNumber}`, "--jq", ".body"],
+    const result = gh(
+      [
+        "api",
+        `repos/${repository}/commits/${afterSha}/pulls`,
+        "--paginate",
+        "--jq",
+        `.[] | select(.state == "OPEN" or .state == "MERGED") | {number, base: .base.ref, head: .head.ref, body}`,
+      ],
       { cwd, env },
-    ).stdout;
+    );
+    pulls =
+      result.stdout.trim() === ""
+        ? []
+        : result.stdout
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line));
   } catch (err) {
     const detail =
       err instanceof CommandError ? err.stderr.trim() : String(err);
     return describeFailure({
-      checked: `the body of pull request #${prNumber} via gh api`,
+      checked: `the pull requests associated with the triggering commit ${afterSha.slice(0, 8)} via gh api`,
       found: detail || "gh api failed",
-      correction: "ensure the PR body is readable with the contents-read token",
+      correction:
+        "ensure the commit's pull requests are readable with the contents-read token",
     });
   }
+  const releasePulls = pulls.filter(
+    (pr) => pr.head === expectedHead && pr.base === "main",
+  );
+  if (releasePulls.length === 0) {
+    return describeFailure({
+      checked: `the pull request for ${expectedHead} among the commits associated with ${afterSha.slice(0, 8)}`,
+      found:
+        pulls.length === 0
+          ? "no pull request is associated with the triggering commit"
+          : `no associated pull request has head ${expectedHead} on base main`,
+      correction:
+        "merge the release branch release/v<version> into main via a pull request",
+    });
+  }
+  const body = releasePulls[0].body ?? "";
   const marker = /^Kit: @vipentti\/npm-release-flow@(\d+\.\d+\.\d+)$/m.exec(
-    body ?? "",
+    body,
   );
   if (!marker) {
     return describeFailure({
@@ -329,13 +350,9 @@ export async function detect(options = {}) {
     return 0;
   }
   if (verdict.verdict === "valid") {
-    const mergeSubject = git(
-      ["log", "-1", "--format=%s", afterSha],
-      ctx,
-    ).stdout.trim();
     const skewProblem = skewMarkerProblem(
       /** @type {string} */ (verdict.version),
-      mergeSubject,
+      afterSha,
       cwd,
       env,
     );

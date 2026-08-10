@@ -22,6 +22,7 @@ import {
   readConsumerFile,
   setGhRepoState,
 } from "./helpers/fixture.mjs";
+import { cutChangelog } from "../src/lib/changelog.mjs";
 
 const hasGpg = gpgFixtureUsable();
 
@@ -226,14 +227,14 @@ test("tag refuses when no release merge matches (zero candidates)", async () => 
     );
     assert.match(
       err.message,
-      /Found: no commit matches the release-merge message grammar\./,
+      /Found: no first-parent commit is a valid release for this version\./,
     );
   } finally {
     fixture.cleanup();
   }
 });
 
-test("tag refuses when multiple release merges match", async () => {
+test("tag resolves the release on a squash-merged history", async () => {
   const fixture = createFixtureRepo();
   const signing = createSigningHome(fixture.base);
   const env = {
@@ -242,47 +243,58 @@ test("tag refuses when multiple release merges match", async () => {
     NPM_RELEASE_FLOW_GPG_FINGERPRINT: signing.fingerprint,
   };
   try {
-    createReleaseMerge(fixture, { version: "1.2.3", prNumber: 12 }, env);
-    // A second merge whose message claims release/v1.2.3 (wrong version in
-    // the message) makes two candidates for the v1.2.3 pattern.
-    const branch = "release/v1.2.4";
-    git(["checkout", "-b", branch], { cwd: fixture.consumer, env });
+    // A squash merge writes the release state straight onto main as a single
+    // commit; tag must locate it by classification and version, not by a
+    // merge-message grammar.
     const pkg = JSON.parse(readConsumerFile(fixture, "package.json"));
-    pkg.version = "1.2.4";
+    pkg.version = "1.2.3";
     writeFileSync(
       join(fixture.consumer, "package.json"),
       JSON.stringify(pkg, null, 2) + "\n",
     );
+    const lock = JSON.parse(readConsumerFile(fixture, "package-lock.json"));
+    lock.version = "1.2.3";
+    lock.packages[""].version = "1.2.3";
+    writeFileSync(
+      join(fixture.consumer, "package-lock.json"),
+      JSON.stringify(lock, null, 2) + "\n",
+    );
+    const cut = cutChangelog(readConsumerFile(fixture, "CHANGELOG.md"), {
+      previousVersion: "1.2.2",
+      version: "1.2.3",
+      date: "2026-08-01",
+      compareUrl: "https://github.com/example/fixture-consumer/compare",
+    });
+    assert.equal(cut.ok, true, cut.reason);
+    writeFileSync(
+      join(fixture.consumer, "CHANGELOG.md"),
+      /** @type {string} */ (cut.content),
+    );
     git(["add", "."], { cwd: fixture.consumer, env });
-    git(["commit", "-m", "release: 1.2.4"], { cwd: fixture.consumer, env });
-    git(["checkout", "main"], { cwd: fixture.consumer, env });
-    git(
-      [
-        "merge",
-        "--no-ff",
-        "-m",
-        "Merge pull request #13 from example/fixture-consumer/release/v1.2.3",
-        branch,
-      ],
-      { cwd: fixture.consumer, env },
-    );
-    git(["branch", "-D", branch], { cwd: fixture.consumer, env });
+    git(["commit", "-m", "Release v1.2.3 (#12)"], {
+      cwd: fixture.consumer,
+      env,
+    });
     git(["push", "origin", "main"], { cwd: fixture.consumer, env });
-
-    const err = await expectCliError(
-      tag({ version: "1.2.3", execute: false }, { cwd: fixture.consumer, env }),
-      ExitCode.ERROR,
+    const squashSha = git(["rev-parse", "HEAD"], {
+      cwd: fixture.consumer,
+    }).stdout.trim();
+    const lines = [];
+    const code = await tag(
+      { version: "1.2.3", execute: false },
+      { cwd: fixture.consumer, env, log: (line) => lines.push(line) },
     );
+    assert.equal(code, 0);
     assert.match(
-      err.message,
-      /Found: 2 commits match the release-merge message grammar\./,
+      lines.join("\n"),
+      new RegExp(`Release-merge commit: ${squashSha}`),
     );
   } finally {
     fixture.cleanup();
   }
 });
 
-test("tag refuses a release-like merge whose diff is not a valid release", async () => {
+test("tag refuses a release-like commit whose diff is not a valid release", async () => {
   const fixture = createFixtureRepo();
   const signing = createSigningHome(fixture.base);
   const env = {
@@ -291,23 +303,31 @@ test("tag refuses a release-like merge whose diff is not a valid release", async
     NPM_RELEASE_FLOW_GPG_FINGERPRINT: signing.fingerprint,
   };
   try {
-    // Merge with the release grammar but only a README change.
+    // A version bump to 1.2.3 whose diff carries an extra file: the commit
+    // is the version match, but classification rejects it as a release.
     const branch = "release/v1.2.3";
     git(["checkout", "-b", branch], { cwd: fixture.consumer, env });
-    writeFileSync(join(fixture.consumer, "README.md"), "# only a doc change\n");
-    git(["add", "."], { cwd: fixture.consumer, env });
-    git(["commit", "-m", "docs"], { cwd: fixture.consumer, env });
-    git(["checkout", "main"], { cwd: fixture.consumer, env });
-    git(
-      [
-        "merge",
-        "--no-ff",
-        "-m",
-        "Merge pull request #12 from example/fixture-consumer/release/v1.2.3",
-        branch,
-      ],
-      { cwd: fixture.consumer, env },
+    const pkg = JSON.parse(readConsumerFile(fixture, "package.json"));
+    pkg.version = "1.2.3";
+    writeFileSync(
+      join(fixture.consumer, "package.json"),
+      JSON.stringify(pkg, null, 2) + "\n",
     );
+    const lock = JSON.parse(readConsumerFile(fixture, "package-lock.json"));
+    lock.version = "1.2.3";
+    lock.packages[""].version = "1.2.3";
+    writeFileSync(
+      join(fixture.consumer, "package-lock.json"),
+      JSON.stringify(lock, null, 2) + "\n",
+    );
+    writeFileSync(join(fixture.consumer, "README.md"), "# changed too\n");
+    git(["add", "."], { cwd: fixture.consumer, env });
+    git(["commit", "-m", "release: 1.2.3"], { cwd: fixture.consumer, env });
+    git(["checkout", "main"], { cwd: fixture.consumer, env });
+    git(["merge", "--no-ff", "-m", "Merge branch 'release/v1.2.3'", branch], {
+      cwd: fixture.consumer,
+      env,
+    });
     git(["branch", "-D", branch], { cwd: fixture.consumer, env });
     git(["push", "origin", "main"], { cwd: fixture.consumer, env });
 

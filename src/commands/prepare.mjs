@@ -485,11 +485,12 @@ export async function prepare(args, options = {}) {
       );
     }
 
-    const checkout = git(["checkout", "-b", branchName], { cwd, env });
-    if (checkout.status !== 0) {
+    try {
+      git(["checkout", "-b", branchName], { cwd, env });
+    } catch (err) {
       throw mutationError(
         "creating the release branch",
-        checkout.stderr.trim() || "git checkout failed",
+        err instanceof CommandError ? err.stderr.trim() : String(err),
         "resolve the branch conflict, then rerun",
         created.join(", ") || "nothing",
         "cut control files are modified in the worktree",
@@ -497,15 +498,23 @@ export async function prepare(args, options = {}) {
     }
     created.push(`branch ${branchName}`);
 
-    git(["add", ...RELEASE_FILES], { cwd, env });
-    const commit = git(["commit", "-S", "-m", `release: ${version}`], {
-      cwd,
-      env,
-    });
-    if (commit.status !== 0) {
+    try {
+      git(["add", ...RELEASE_FILES], { cwd, env });
+    } catch (err) {
+      throw mutationError(
+        "staging the release control files",
+        err instanceof CommandError ? err.stderr.trim() : String(err),
+        "stage the three control files manually, then rerun",
+        created.join(", ") || "nothing",
+        `the cut control files on ${branchName} are unstaged`,
+      );
+    }
+    try {
+      git(["commit", "-S", "-m", `release: ${version}`], { cwd, env });
+    } catch (err) {
       throw mutationError(
         "creating the signed release commit",
-        commit.stderr.trim() || "git commit -S failed",
+        err instanceof CommandError ? err.stderr.trim() : String(err),
         "ensure the signing key is available (see the signing preflight), then commit manually",
         created.join(", ") || "nothing",
         `the staged control-file changes on ${branchName} are uncommitted`,
@@ -540,11 +549,12 @@ export async function prepare(args, options = {}) {
         "verify and fix the commit manually",
       );
     }
-    const verifyCommit = git(["verify-commit", "HEAD"], { cwd, env });
-    if (verifyCommit.status !== 0) {
+    try {
+      git(["verify-commit", "HEAD"], { cwd, env });
+    } catch (err) {
       throw mutationError(
         "the release commit signature",
-        verifyCommit.stderr.trim() || "git verify-commit failed",
+        err instanceof CommandError ? err.stderr.trim() : String(err),
         "re-sign the commit with the configured key",
         created.join(", ") || "nothing",
         "verify and fix the commit manually",
@@ -569,11 +579,12 @@ export async function prepare(args, options = {}) {
       );
     }
 
-    const pushed = git(["push", "-u", "origin", branchName], { cwd, env });
-    if (pushed.status !== 0) {
+    try {
+      git(["push", "-u", "origin", branchName], { cwd, env });
+    } catch (err) {
       throw mutationError(
         `pushing ${branchName} to origin`,
-        pushed.stderr.trim() || "git push failed",
+        err instanceof CommandError ? err.stderr.trim() : String(err),
         "push the branch manually, then create the PR",
         created.join(", ") || "nothing",
         `push ${branchName} and create the release PR manually`,
@@ -630,11 +641,12 @@ export async function prepare(args, options = {}) {
     }
     created.push(`release PR ${prUrl}`);
 
-    const backToMain = git(["checkout", "main"], { cwd, env });
-    if (backToMain.status !== 0) {
+    try {
+      git(["checkout", "main"], { cwd, env });
+    } catch (err) {
       throw mutationError(
         "returning to the main branch",
-        backToMain.stderr.trim() || "git checkout main failed",
+        err instanceof CommandError ? err.stderr.trim() : String(err),
         "check out main manually",
         created.join(", ") || "nothing",
         "nothing; the release is prepared (check out main at your convenience)",

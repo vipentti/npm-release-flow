@@ -205,6 +205,9 @@ jobs:
           }
 
       # Tag probe: observe the remote tag once, at job start (§9 boundary 4).
+      # `git ls-remote --exit-code` status is captured explicitly: 0 means
+      # the ref is present, 2 means absent; any other status (auth, network,
+      # transport) fails the job instead of being misread as absence.
       # The result is consumed by the release step; there is no pre-mutation
       # re-probe.
       - name: Probe the remote tag
@@ -212,11 +215,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code origin "refs/tags/v${{ needs.detect.outputs.version }}" >/dev/null 2>&1; then
-            echo "tag-exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag-exists=false" >> "$GITHUB_OUTPUT"
-          fi
+          set +e
+          git ls-remote --exit-code origin "refs/tags/v${{ needs.detect.outputs.version }}" >/dev/null 2>&1
+          status=$?
+          set -e
+          case "$status" in
+            0)
+              echo "tag-exists=true" >> "$GITHUB_OUTPUT"
+              ;;
+            2)
+              echo "tag-exists=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "git ls-remote failed with exit status $status (only 0/2 are valid)" >&2
+              exit 1
+              ;;
+          esac
 
       # Revalidation #1: ancestry + control-file equality. GH_TOKEN only,
       # before any secret loads (§6).

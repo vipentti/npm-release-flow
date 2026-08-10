@@ -27,22 +27,13 @@ import {
   localRefSha,
   localObjectSha,
 } from "../lib/repo-state.mjs";
-import { fingerprintSigningState } from "../lib/tag-verify.mjs";
-import { parseStableVersion } from "../lib/versions.mjs";
+import {
+  fingerprintSigningState,
+  verifyTagObject,
+} from "../lib/tag-verify.mjs";
+import { parseStableVersion, isStrictIncrease } from "../lib/versions.mjs";
 import { classifyRelease } from "../lib/release-state.mjs";
 import { mintAppToken } from "../lib/app-token.mjs";
-
-/**
- * @param {string} version
- * @returns {RegExp} The documented release-merge message grammar:
- *   `Merge pull request #N from <owner>/<repo>/release/v<version>`.
- */
-function releaseMergePattern(version) {
-  const escaped = version.replace(/\./g, "\\.");
-  return new RegExp(
-    `^Merge pull request #[0-9]+ from [^/\\s]+/[^/\\s]+/release/v${escaped}$`,
-  );
-}
 
 /**
  * @typedef {object} TagOptions
@@ -114,143 +105,105 @@ function fingerprintPreflight(env, ctx) {
 }
 
 /**
- * Resolve the release-merge candidate commit for a version: exactly one
- * matching release merge on `origin/main`'s first-parent history, classified
- * as a valid release for that version.
+ * Resolve the release-merge candidate commit for a version: walk
+ * `origin/main`'s first-parent history and locate exactly one commit whose
+ * release classification is a valid release for that version. The version
+ * increase is the release key (classifyRelease is the source of truth), not
+ * the commit message, so squash and merge histories are treated alike.
  *
  * @param {string} version
  * @param {{ cwd: string, env: NodeJS.ProcessEnv }} ctx
  * @returns {string} The candidate commit SHA.
  */
 function resolveReleaseMerge(version, ctx) {
-  const shas = git(["rev-list", "--first-parent", "origin/main"], ctx)
-    .stdout.trim()
-    .split("\n")
-    .filter(Boolean);
-  const subjects = git(
-    ["log", "--first-parent", "--format=%s", "origin/main"],
+  const lines = git(
+    ["rev-list", "--first-parent", "--parents", "origin/main"],
     ctx,
   )
     .stdout.trim()
     .split("\n")
     .filter(Boolean);
-  const pattern = releaseMergePattern(version);
-  const candidates = shas.filter((sha, i) => pattern.test(subjects[i] ?? ""));
-  if (candidates.length === 0) {
-    throw new CliError(
-      describeFailure({
-        checked: `origin/main's first-parent history for a release merge of v${version}`,
-        found: "no commit matches the release-merge message grammar",
-        correction:
-          "confirm the release PR was merged into main; tag the merged commit manually if it was",
-      }),
-    );
+  /** @type {string[]} */
+  const candidates = [];
+  /** @type {Array<{ sha: string, verdict: ReturnType<typeof classifyRelease> }>} */
+  const versionMatches = [];
+  for (const line of lines) {
+    const parts = line.split(/\s+/);
+    const sha = parts[0];
+    // `--parents` under `--first-parent` lists only the first parent; the
+    // root commit has none and is never a release.
+    const parent = parts[1] ?? null;
+    if (parent === null) continue;
+    const afterPkg = showJson(sha, "package.json", ctx);
+    const afterVersion =
+      afterPkg && typeof afterPkg.version === "string"
+        ? afterPkg.version
+        : null;
+    if (afterVersion !== version) continue;
+    const beforePkg = showJson(parent, "package.json", ctx);
+    const beforeVersion =
+      beforePkg && typeof beforePkg.version === "string"
+        ? beforePkg.version
+        : null;
+    const beforeParsed =
+      beforeVersion === null ? null : parseStableVersion(beforeVersion);
+    const afterParsed = parseStableVersion(version);
+    if (beforeParsed === null || afterParsed === null) continue;
+    if (!isStrictIncrease(beforeParsed, afterParsed)) continue;
+    const verdict = classifyRelease({
+      beforeResolved: true,
+      headMatchesTrigger: true,
+      beforePkg,
+      afterPkg,
+      beforeLock: showJson(parent, "package-lock.json", ctx),
+      afterLock: showJson(sha, "package-lock.json", ctx),
+      changedFiles: git(["diff", "--name-only", parent, sha], ctx)
+        .stdout.trim()
+        .split("\n")
+        .filter(Boolean),
+      changelog: showFile(sha, "CHANGELOG.md", ctx),
+      tagTarget: localRefSha(`refs/tags/v${version}`, ctx),
+      afterSha: sha,
+    });
+    if (verdict.verdict === "valid") {
+      candidates.push(sha);
+    } else {
+      versionMatches.push({ sha, verdict });
+    }
   }
   if (candidates.length > 1) {
     throw new CliError(
       describeFailure({
-        checked: `origin/main's first-parent history for a release merge of v${version}`,
-        found: `${candidates.length} commits match the release-merge message grammar`,
+        checked: `origin/main's first-parent history for a release of v${version}`,
+        found: `${candidates.length} first-parent commits are valid releases for this version`,
         correction:
-          "resolve which merge is the release for this version, then tag it manually",
+          "resolve which commit is the release for this version, then tag it manually",
       }),
     );
   }
-  const candidate = candidates[0];
-  const parent = git(["rev-parse", `${candidate}^`], ctx).stdout.trim();
-  const tagTarget = localRefSha(`refs/tags/v${version}`, ctx);
-  const verdict = classifyRelease({
-    beforeResolved: true,
-    headMatchesTrigger: true,
-    beforePkg: showJson(parent, "package.json", ctx),
-    afterPkg: showJson(candidate, "package.json", ctx),
-    beforeLock: showJson(parent, "package-lock.json", ctx),
-    afterLock: showJson(candidate, "package-lock.json", ctx),
-    changedFiles: git(["diff", "--name-only", parent, candidate], ctx)
-      .stdout.trim()
-      .split("\n")
-      .filter(Boolean),
-    changelog: showFile(candidate, "CHANGELOG.md", ctx),
-    tagTarget,
-    afterSha: candidate,
-  });
-  if (verdict.verdict !== "valid") {
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+  if (versionMatches.length === 1) {
     throw new CliError(
       describeFailure({
         checked: `the release merge of v${version} as a valid release`,
-        found: verdict.reasons[0] ?? "the merge is not a valid release",
+        found:
+          versionMatches[0].verdict.reasons[0] ??
+          "the merge is not a valid release",
         correction:
           "the merge commit's diff must be exactly the three control files with a stable version increase and a valid changelog",
       }),
     );
   }
-  return candidate;
-}
-
-/**
- * Fully verify the local annotated tag: annotated object, target commit,
- * subject `Release v<version>`, exactly one VALIDSIG whose primary
- * fingerprint equals the configured fingerprint.
- *
- * @param {string} version
- * @param {string} candidate
- * @param {string} fingerprint
- * @param {{ cwd: string, env: NodeJS.ProcessEnv }} ctx
- * @returns {void}
- */
-function verifyLocalTag(version, candidate, fingerprint, ctx) {
-  const tagRef = `refs/tags/v${version}`;
-  const type = git(["cat-file", "-t", tagRef], ctx).stdout.trim();
-  if (type !== "tag") {
-    throw new CliError(
-      describeFailure({
-        checked: `that v${version} is an annotated tag object`,
-        found: `it is a ${type} object`,
-        correction: "recreate the tag with an annotated, signed tag",
-      }),
-    );
-  }
-  const target = git(["rev-parse", `${tagRef}^{commit}`], ctx).stdout.trim();
-  if (target !== candidate) {
-    throw new CliError(
-      describeFailure({
-        checked: `that v${version} points at the release-merge commit`,
-        found: `the tag points at ${target.slice(0, 8)}, not ${candidate.slice(0, 8)}`,
-        correction: "delete the tag and recreate it on the release merge",
-      }),
-    );
-  }
-  const tagBody = git(["cat-file", "tag", tagRef], ctx).stdout;
-  if (!tagBody.includes(`\n\nRelease v${version}\n`)) {
-    throw new CliError(
-      describeFailure({
-        checked: `that the tag subject is "Release v${version}"`,
-        found: "the tag message differs",
-        correction: "recreate the tag with the subject 'Release v<version>'",
-      }),
-    );
-  }
-  const raw = git(["verify-tag", "--raw", tagRef], ctx).stderr;
-  const validsigs = [...raw.matchAll(/\[GNUPG:\] VALIDSIG ([0-9A-Fa-f]{40})/g)];
-  if (validsigs.length !== 1) {
-    throw new CliError(
-      describeFailure({
-        checked: `that v${version} has exactly one valid GPG signature`,
-        found: `${validsigs.length} VALIDSIG line(s)`,
-        correction: "re-sign the tag with the release key",
-      }),
-    );
-  }
-  if (validsigs[0][1].toLowerCase() !== fingerprint) {
-    throw new CliError(
-      describeFailure({
-        checked:
-          "that the signature's primary fingerprint matches NPM_RELEASE_FLOW_GPG_FINGERPRINT",
-        found: validsigs[0][1],
-        correction: "sign the tag with the configured release key",
-      }),
-    );
-  }
+  throw new CliError(
+    describeFailure({
+      checked: `origin/main's first-parent history for a release of v${version}`,
+      found: "no first-parent commit is a valid release for this version",
+      correction:
+        "confirm the release PR was merged into main; tag the merged commit manually if it was",
+    }),
+  );
 }
 
 /**
@@ -427,7 +380,13 @@ export async function tag(args, options = {}) {
         }),
       );
     }
-    verifyLocalTag(version, candidate, fingerprint, ctx);
+    verifyTagObject({
+      version,
+      targetSha: candidate,
+      fingerprint,
+      cwd: ctx.cwd,
+      env: ctx.env,
+    });
     plan(`Remote tag v${version} present and valid; verified, no push`);
     return 0;
   }
@@ -435,7 +394,13 @@ export async function tag(args, options = {}) {
   if (localTag !== null) {
     // Remote absent with a valid local tag: dry-run reports the push,
     // --execute pushes the existing tag with the App token.
-    verifyLocalTag(version, candidate, fingerprint, ctx);
+    verifyTagObject({
+      version,
+      targetSha: candidate,
+      fingerprint,
+      cwd: ctx.cwd,
+      env: ctx.env,
+    });
     plan(
       `Would push the existing tag v${version} to origin (App-authenticated)`,
     );
@@ -497,7 +462,13 @@ export async function tag(args, options = {}) {
     ctx,
   );
   try {
-    verifyLocalTag(version, candidate, fingerprint, ctx);
+    verifyTagObject({
+      version,
+      targetSha: candidate,
+      fingerprint,
+      cwd: ctx.cwd,
+      env: ctx.env,
+    });
   } catch (err) {
     if (err instanceof CliError) {
       throw new CliError(
