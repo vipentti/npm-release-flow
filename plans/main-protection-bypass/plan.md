@@ -16,8 +16,8 @@ Amends the `initial-setup` planlet's T5 ruleset body for `vipentti/npm-release-f
 
 ## Approach
 
-- Implementation is the live mutation, not file changes: `gh-axi api PUT /repos/vipentti/npm-release-flow/rulesets/20612037 --field body=@ruleset.json`, where `ruleset.json` is the current GET body plus the `bypass_actors` array (and only that change).
-- Verify with a GET of the same ruleset.
+- Implementation is the live mutation, not file changes: `gh api --method PUT /repos/vipentti/npm-release-flow/rulesets/20612037 --input ruleset.json`, where `ruleset.json` is initial-setup T5's writable ruleset body (name `main protection`, target branch, enforcement active, conditions ref_name include `refs/heads/main` / exclude empty, the pull_request rule with all five parameters and `required_approving_review_count: 1`, required_status_checks with context `ci` and strict policy true) plus ONLY the `bypass_actors` array (the one admin-role entry).
+- Verify with a GET of the same ruleset via `gh api`.
 - The PR carries only the planlet files; the ruleset mutation is done directly against the live ruleset.
 
 ## Acceptance Criteria
@@ -26,10 +26,11 @@ Amends the `initial-setup` planlet's T5 ruleset body for `vipentti/npm-release-f
 - `enforcement` still `active`; `required_approving_review_count` still `1`; `required_status_checks` still contains context `ci`.
 - Owner (admin) can merge without a review; a non-admin still needs 1 approving review.
 - `planlet validate main-protection-bypass` passes.
+- The planlet task checklist (T1-T3 checked) is committed and pushed with the PR head; task state does not trail committed state.
 
 ## Verification
 
-- Per task, GET-based checks via `gh-axi api` with `--jq` filters (handled in tasks.md): bypass actor present, review count still 1, `ci` required status check still present, enforcement active, and a read-only confirmation that the ruleset's conditions still include `refs/heads/main`.
+- Per task, read-only GET-based checks via `gh api` with `--jq` filters (handled in tasks.md): bypass actor present, full main config matches the expected amended T5 body, `ci` required status check still present, enforcement active, and both tag rulesets unchanged.
 - The self-merge behavior itself is the purpose of the change; the acceptance criteria capture the observable state that establishes it.
 
 ## Risks and Considerations
