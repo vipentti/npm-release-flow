@@ -1,0 +1,34 @@
+{
+  "name": "@vipentti/npm-release-flow",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Reusable npm release toolkit: CLI plus reusable GitHub Actions release workflow",
+  "type": "module",
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "bin": {
+    "npm-release-flow": "./bin/npm-release-flow.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    ".github/workflows/release.yml"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vipentti/npm-release-flow.git"
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "scripts": {
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "@types/node": "24.13.3"
+  }
+}
