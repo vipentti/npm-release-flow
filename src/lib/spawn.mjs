@@ -32,13 +32,18 @@ export function win32Shell(platform = process.platform) {
 }
 
 /**
- * Convert a native Windows absolute path to the MSYS2/POSIX form the
- * Git-bundled MSYS2 tools (gpg, tar) read correctly, e.g.
- * `C:\foo\bar` -> `/c/foo/bar`. Passed a native path, those binaries
- * misread it as cwd-relative on win32 (`gpg: keyblock resource
- * '<cwd>/C:\...' No such file or directory`), so every path handed to a
- * MSYS2 tool is converted here. No-op on POSIX and for non-drive-letter
- * paths, so CI and the kit behavior are unchanged.
+ * Convert a native Windows absolute path to the MSYS2 form the Git-bundled
+ * MSYS2 tools (gpg, tar) read correctly, e.g. `C:\foo\bar` -> `/c/foo/bar`.
+ * Passed a native path, those binaries misread it as cwd-relative on win32
+ * (`gpg: keyblock resource '<cwd>/C:\...' No such file or directory`), so
+ * every path handed to a MSYS2 tool is converted here. Verified: the mixed
+ * `C:/...` form fails with the Git-bundled gpg and tar exactly like the
+ * native backslash form, so `/c/...` is required, not just preferred. No-op
+ * on POSIX and for non-drive-letter paths, so CI and the kit behavior are
+ * unchanged. Note: a user who explicitly points gpg.program at a native
+ * (non-MSYS) gpg, or has a native bsdtar first on PATH, would need native
+ * paths; there is no single form both native and MSYS tools accept, and the
+ * Git-bundled tools are the default on Windows (Git for Windows on PATH).
  *
  * @param {string} path
  * @param {NodeJS.Platform} [platform]

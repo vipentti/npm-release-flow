@@ -19,7 +19,9 @@ to it.
   README.md for the caller contract.
 - Self-release caller `.github/workflows/self-release.yml`: pushes to `main`
   only, pinned to the full commit SHA `764e09cf642997b736663e1711e69bbb6d71a43e`
-  (the kit at version `0.0.0`).
+  (the kit at version `0.0.0`). This is the pre-first-release pin; it must
+  advance to the merge commit of this release-bootstrap PR before the first
+  release (see bootstrap below).
 - CI `.github/workflows/ci.yml`: the full local suite in a single `ci` job,
   plus actionlint on every workflow file.
 - Rulesets (active): `main` (no deletion, no non-fast-forward, required
@@ -83,10 +85,12 @@ Until then no approval gate exists and the first release stays manual
 ### Trusted Publisher
 
 npm Trusted Publishing validates the **calling** workflow's filename, not
-the workflow that contains the publish command. For this kit the caller is
-`.github/workflows/self-release.yml`, so the Trusted Publisher on npmjs.com
-must name exactly that file (repository `vipentti/npm-release-flow`, allowed
-action `npm publish`).
+the workflow that contains the publish command. npm matches the filename
+only, so the Trusted Publisher on npmjs.com must name exactly
+`self-release.yml` (repository `vipentti/npm-release-flow`, environment
+`release`, allowed action `npm publish`). Bind the environment field to
+`release`: that is where the OIDC-bearing publish job is gated by the
+Environment approval.
 
 ## Before making the repository public
 
@@ -102,60 +106,66 @@ In order:
 
 ## First npm release (exact bootstrap order)
 
-The first release is delicate because the package does not exist on the
-registry yet and the release-diff allowlist permits exactly
-`CHANGELOG.md`, `package.json`, and `package-lock.json` in a release PR.
-Follow this order exactly:
+The package does not exist on the registry yet, and a brand-new package
+cannot OIDC-publish its first version: npm requires the package to already
+exist before Trusted Publishing can be configured. So the bootstrap
+publishes a throwaway `0.0.0` under a non-default `bootstrap` dist-tag, and
+the first real automated release (for example `1.0.0`) is the one published
+through Trusted Publishing with provenance. The release-diff allowlist
+permits exactly `CHANGELOG.md`, `package.json`, and `package-lock.json` in a
+release PR, so the control-file changes below live in ordinary PRs. Follow
+this order exactly:
 
-1. Complete the pre-public checks and make the repository public (above).
-2. In an **ordinary PR**, remove `"private": true` while the version stays
-   `0.0.0`, and merge it. It cannot be removed inside the release PR: that
-   would change a fourth file and invalidate the release diff.
-3. From that `0.0.0` main, run (from a checkout, as the package is not
-   published yet)
+1. Complete the pre-public checks and make the repository public (above),
+   then merge this release-bootstrap PR.
+2. In an **ordinary PR**, advance the caller pin to this PR's merge commit
+   and remove `"private": true`, keeping the version `0.0.0`: update
+   `.github/workflows/self-release.yml` and the README caller example to the
+   resulting `main` SHA (full 40-character SHA), and drop `"private": true`
+   from `package.json`. Merge it. The pin advance is required before the
+   first release: the called workflow checks out the kit at the pin, and the
+   skew guard compares only the semantic version, so a stale pin would run
+   the pre-merge kit source while passing the guard as equivalent
+   (`0.0.0` == `0.0.0`). `"private": true` cannot be removed inside a
+   release PR: that would change a fourth file and invalidate the release
+   diff.
+3. Manually publish `0.0.0` as a bootstrap-tagged package (the registry
+   prerequisite): from the merged checkout, `npm publish --tag bootstrap`
+   with an npm auth token. The workflow never verifies or publishes `0.0.0`
+   (the first automated release is a higher version), so no `gitHead`
+   handling is needed; deprecate it later if desired:
+
+   ```sh
+   npm deprecate @vipentti/npm-release-flow@0.0.0 "bootstrap version"
+   ```
+
+4. Configure Trusted Publishing on npmjs.com (filename `self-release.yml`,
+   environment `release`, see above), set the secrets and variables above,
+   add the required reviewer on the `release` Environment, and install the
+   App.
+5. From that `0.0.0` main, run (from a checkout, as the package is not yet
+   releasable)
    `node bin/npm-release-flow.mjs prepare --version <first>` (for example
-   `1.0.0`). The
-   release PR body marker stays `Kit: @vipentti/npm-release-flow@0.0.0`
-   because the prepared kit checkout is still the pinned `0.0.0` commit,
-   which matches the caller pin.
-4. **Before merging the release PR**, manually publish the prepared version:
-   a brand-new package cannot OIDC-publish its first version. This must be a
-   tarball-path publish of the exact prepared tarball:
-   - On the release branch, produce the tarball: `npm pack` (the packed
-     files are identical between the release branch and the merge commit, so
-     `npm pack` yields the byte-identical tarball the verify job produces;
-     npm pack output is deterministic).
-   - Publish by tarball path with an npm auth token:
-     `npm publish <tarball>.tgz`. A tarball-path publish records **no**
-     `gitHead` in the registry manifest.
-   - Verify the registry metadata before merging: `name`, `version`,
-     `repository.url`, and `dist.integrity` equal to the local tarball's
-     sha512 integrity, and **no incompatible `gitHead`**.
-     Why: the release step's `publishedIdentityProblems` (src/release.mjs,
-     covered in test/release.test.mjs) checks name, version, repository, and
-     integrity unconditionally, and checks `gitHead` only when present. The
-     eventual merge commit does not exist at manual-publish time, so a normal
-     publish from the release branch would record a `gitHead` that cannot
-     equal it, and the post-merge verify would hard-fail. A tarball-path
-     publish omits `gitHead`, so the check is skipped and the identity/
-     integrity checks pass.
-5. Configure the Trusted Publisher for `.github/workflows/self-release.yml`,
-   the secrets and variables above, the required reviewer on the `release`
-   Environment, and the App installation.
-6. Merge the release PR. Its `0.0.0` marker matches the pinned workflow, so
-   the self-release runs; the tag/publish steps are verify-or-idempotent
-   against the manual publish.
-7. Afterward, advance the caller pin in an **ordinary PR** (below).
+   `1.0.0`). The release PR body marker stays
+   `Kit: @vipentti/npm-release-flow@0.0.0` because the kit checkout at the
+   pin is still `0.0.0`, which matches the marker.
+6. Merge the release PR. The self-release runs; the `release` job waits on
+   the Environment approval gate, then creates the tag and publishes
+   `<first>` through `npm publish --provenance` (the absent-version path;
+   verify-or-idempotent against the registry).
+7. Afterward, advance the caller pin in an ordinary PR (below).
 
 ## After each release (caller pin advance)
 
-The self-release caller pins the workflow to a full 40-character commit SHA.
-After each self-release, advance the pin to the release commit in a follow-up
-ordinary PR, always a full 40-character SHA (never a branch or tag). The
-release-diff allowlist is exactly the three control files, so the pin cannot
-move inside a release PR; and a stale pin fails the next release's marker
-check (`detect` compares the PR body's `Kit: @vipentti/npm-release-flow@<v>`
-marker against the kit checkout version at the pin).
+The self-release caller pins the workflow to a full 40-character commit SHA,
+and the README caller example carries the same pin. After each self-release,
+advance both to the release commit in a follow-up ordinary PR, always a full
+40-character SHA (never a branch or tag). The release-diff allowlist is
+exactly the three control files, so the pin cannot move inside a release PR;
+and a stale pin fails the next release's marker check (`detect` compares the
+PR body's `Kit: @vipentti/npm-release-flow@<v>` marker against the kit
+checkout version at the pin) or runs the wrong kit source while the version
+guard still passes.
 
 ## Secret contract
 
