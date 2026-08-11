@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/detect.mjs",
+    "src/verify.mjs",
+    "src/revalidate.mjs",
+    "src/validate-artifact.mjs",
+    "src/release.mjs",
+    "test/**/*.test.mjs"
+  ],
+  "project": ["bin/**/*.mjs", "src/**/*.mjs", "test/**/*.mjs"]
+}
