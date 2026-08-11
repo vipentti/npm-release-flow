@@ -177,8 +177,11 @@ npm test            # node --test (real git/gpg fixtures)
 npm run release:verify  # all of the above, in order
 ```
 
-The CI workflow runs the same suite in a single `ci` job on Linux and
-Windows and actionlint-lints every workflow file. See
+The CI workflow runs a single `ci` job on Linux and Windows: the Linux leg
+runs the full suite (lint, format:check, typecheck, knip, tests, actionlint,
+pack/CLI smoke) and is the authoritative required check; the Windows leg
+runs the test suite, which is what exercises the Windows-specific path
+handling (MSYS gpg/tar, cmd spawn, git signing). See
 [RELEASE.md](RELEASE.md) for the release checklist and the exact human
 sequences (going public, first npm release).
 

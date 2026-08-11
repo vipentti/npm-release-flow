@@ -42,16 +42,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The static checks are OS-independent; they run on the Linux leg only
+      # (the authoritative, required `ci` gate). The Windows leg runs the
+      # test suite, which is what exercises the Windows-specific path
+      # handling (MSYS gpg/tar, cmd spawn, git signing); repeating the
+      # static checks there would add minutes of redundant wall time.
       - name: Lint
+        if: runner.os == 'Linux'
         run: npm run lint
 
       - name: Format check
+        if: runner.os == 'Linux'
         run: npm run format:check
 
       - name: Typecheck
+        if: runner.os == 'Linux'
         run: npm run typecheck
 
       - name: Knip
+        if: runner.os == 'Linux'
         run: npm run knip
 
       - name: Test
@@ -73,6 +82,7 @@ jobs:
         run: ./actionlint -ignore 'property "workflow_repository" is not defined' -ignore 'property "workflow_sha" is not defined' -ignore 'unexpected key "queue" for "concurrency" section' .github/workflows/*.yml
 
       - name: Pack and CLI smoke test
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           npm pack --dry-run 2>&1 | grep -F '.github/workflows/release.yml'
