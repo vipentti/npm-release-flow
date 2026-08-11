@@ -8,7 +8,7 @@
     ".": "./src/index.mjs"
   },
   "bin": {
-    "npm-release-flow": "./bin/npm-release-flow.mjs"
+    "npm-release-flow": "bin/npm-release-flow.mjs"
   },
   "files": [
     "bin",
