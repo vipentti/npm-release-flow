@@ -8,9 +8,10 @@ GitHub App, and publishes to npm through Trusted Publishing with provenance.
 
 ## Status
 
-Pre-first-release. The repository is private and the package is not yet
-published (`"private": true`, version `0.0.0`). The kit releases itself with
-its own workflow once the bootstrap in [RELEASE.md](RELEASE.md) is complete.
+The repository is public and the package is published at version `0.0.0`
+(the bootstrap release under the `bootstrap` dist-tag, deprecated once the
+first real release lands). The kit releases itself with its own workflow;
+the first real release is pending the setup in [RELEASE.md](RELEASE.md).
 
 Supported Node: `>=22.14.0` (from `engines`). The protected release job pins
 Node `24.11.1` / npm `11.6.2` and asserts both by exact version; the verify
@@ -30,9 +31,10 @@ single upgrade PR. The verify job hard-fails a normal consumer whose
 installed kit copy is absent or version-mismatched, so this pin is
 mandatory, not optional.
 
-Until the package is published, use the CLI from a checkout with
+Until the first real release, use the CLI from a checkout with
 `node bin/npm-release-flow.mjs` (the development commands below run it
-locally).
+locally); the published `0.0.0` is a bootstrap placeholder and is
+deprecated once the real release lands.
 
 ## CLI
 
@@ -194,8 +196,4 @@ remains unsupported: gpg always receives the MSYS path form.
 
 ## License
 
-MIT. This repository was extracted from an internal plan; the accepted
-architecture lives in `vipentti/agent-blueprints`
-(`blueprints/npm-release-flow.md`, pinned to commit
-`f9d06c77b9920e4cfab774d254f22d60894c1f05`). That pin is historical
-provenance only; nothing in this document requires access to it.
+MIT. See [LICENSE](https://github.com/vipentti/npm-release-flow/blob/main/LICENSE).

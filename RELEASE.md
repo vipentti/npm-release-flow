@@ -6,11 +6,7 @@ repository, one version). This page is the self-release checklist for this
 repository; consumers receive their own copy of the requirements when they
 adopt the workflow (see README.md).
 
-Everything a reader needs is in this file. Historical provenance only: the
-accepted architecture lives in `vipentti/agent-blueprints`
-(`blueprints/npm-release-flow.md`, pinned to commit
-`f9d06c77b9920e4cfab774d254f22d60894c1f05`); nothing below requires access
-to it.
+Everything a reader needs is in this file.
 
 ## Automated / repository state (implemented)
 
