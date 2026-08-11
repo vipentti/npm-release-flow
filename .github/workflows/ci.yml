@@ -9,11 +9,77 @@ permissions:
   contents: read
 
 jobs:
+  # The authoritative, required gate: the `main protection` ruleset requires
+  # the status check named plain `ci`. A matrix would emit
+  # `ci (ubuntu-latest)` / `ci (windows-latest)` and break that contract, so
+  # this job keeps the plain name and Windows coverage is the separate,
+  # additive `windows` job below.
   ci:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The static checks and the full suite are OS-independent; they run
+      # once here on the Linux leg (the required `ci` gate).
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Knip
+        run: npm run knip
+
+      - name: Test
+        run: npm test
+
+      # actionlint lints the same workflow YAML on every runner; running it
+      # once here (where the pinned linux binary is downloaded) suffices.
+      - name: Install actionlint (pinned v1.7.12)
+        run: |
+          curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar -xz actionlint
+          chmod +x actionlint
+
+      # Lint every workflow file (the self-release caller included). The
+      # targeted `queue` ignore is required by the caller's
+      # `concurrency.queue: max`, which actionlint v1.7.12 predates.
+      - name: Lint workflows
+        run: ./actionlint -ignore 'property "workflow_repository" is not defined' -ignore 'property "workflow_sha" is not defined' -ignore 'unexpected key "queue" for "concurrency" section' .github/workflows/*.yml
+
+      - name: Pack and CLI smoke test
+        shell: bash
+        run: |
+          npm pack --dry-run 2>&1 | grep -F '.github/workflows/release.yml'
+          set +e
+          output=$(node bin/npm-release-flow.mjs 2>&1)
+          status=$?
+          set -e
+          if [ "$status" -ne 1 ]; then
+            echo "no-args CLI should exit 1, got $status" >&2
+            exit 1
+          fi
+          echo "$output" | grep -F 'usage: npm-release-flow'
+          echo "CLI smoke test passed"
+
+  # Additive Windows coverage, not a required gate: the test suite is what
+  # exercises the Windows-specific path handling (MSYS gpg/tar, cmd spawn,
+  # git signing). Repeating the OS-independent static checks here would add
+  # redundant wall time, so this job runs npm ci + npm test only.
+  windows:
+    runs-on: windows-latest
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
@@ -23,7 +89,6 @@ jobs:
       # signing tests run on the Windows runner too (gpgFixtureUsable
       # skips them when it is not resolvable).
       - name: Add Git's MSYS gpg to PATH (Windows)
-        if: runner.os == 'Windows'
         shell: bash
         run: |
           set -euo pipefail
@@ -42,68 +107,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # The static checks are OS-independent; they run on the Linux leg only
-      # (the authoritative, required `ci` gate). The Windows leg runs the
-      # test suite, which is what exercises the Windows-specific path
-      # handling (MSYS gpg/tar, cmd spawn, git signing); repeating the
-      # static checks there would add minutes of redundant wall time.
-      - name: Lint
-        if: runner.os == 'Linux'
-        run: npm run lint
-
-      - name: Format check
-        if: runner.os == 'Linux'
-        run: npm run format:check
-
-      - name: Typecheck
-        if: runner.os == 'Linux'
-        run: npm run typecheck
-
-      - name: Knip
-        if: runner.os == 'Linux'
-        run: npm run knip
-
       # Windows runners are 2-core, so node --test's default concurrency is
       # 1 and the subprocess-heavy integration tests run serially. The tests
       # spend most of their time waiting on git/gpg/npm children, so more
-      # file-level concurrency overlaps that wait on the Windows leg.
+      # file-level concurrency overlaps that wait on the Windows job.
       - name: Test
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            npm test -- --test-concurrency=4
-          else
-            npm test
-          fi
-
-      # actionlint lints the same workflow YAML on every runner; running it
-      # once (Linux, where the pinned linux binary is downloaded) suffices.
-      - name: Install actionlint (pinned v1.7.12)
-        if: runner.os == 'Linux'
-        run: |
-          curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar -xz actionlint
-          chmod +x actionlint
-
-      # Lint every workflow file (the self-release caller included). The
-      # targeted `queue` ignore is required by the caller's
-      # `concurrency.queue: max`, which actionlint v1.7.12 predates.
-      - name: Lint workflows
-        if: runner.os == 'Linux'
-        run: ./actionlint -ignore 'property "workflow_repository" is not defined' -ignore 'property "workflow_sha" is not defined' -ignore 'unexpected key "queue" for "concurrency" section' .github/workflows/*.yml
-
-      - name: Pack and CLI smoke test
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          npm pack --dry-run 2>&1 | grep -F '.github/workflows/release.yml'
-          set +e
-          output=$(node bin/npm-release-flow.mjs 2>&1)
-          status=$?
-          set -e
-          if [ "$status" -ne 1 ]; then
-            echo "no-args CLI should exit 1, got $status" >&2
-            exit 1
-          fi
-          echo "$output" | grep -F 'usage: npm-release-flow'
-          echo "CLI smoke test passed"
+          npm test -- --test-concurrency=4

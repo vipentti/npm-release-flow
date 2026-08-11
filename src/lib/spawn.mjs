@@ -40,10 +40,11 @@ export function win32Shell(platform = process.platform) {
  * `C:/...` form fails with the Git-bundled gpg and tar exactly like the
  * native backslash form, so `/c/...` is required, not just preferred. No-op
  * on POSIX and for non-drive-letter paths, so CI and the kit behavior are
- * unchanged. Note: a user who explicitly points gpg.program at a native
- * (non-MSYS) gpg, or has a native bsdtar first on PATH, would need native
- * paths; there is no single form both native and MSYS tools accept, and the
- * Git-bundled tools are the default on Windows (Git for Windows on PATH).
+ * unchanged. Note: tar is handled separately (tarPath detects whether the
+ * resolved tar is GNU/MSYS or native bsdtar and picks the form it reads);
+ * gpg always receives the MSYS form, so a custom native (non-MSYS)
+ * `gpg.program` remains unsupported. The Git-bundled tools are the default
+ * on Windows (Git for Windows on PATH).
  *
  * @param {string} path
  * @param {NodeJS.Platform} [platform]

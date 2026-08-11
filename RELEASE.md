@@ -22,8 +22,9 @@ to it.
   (the kit at version `0.0.0`). This is the pre-first-release pin; it must
   advance to the actual squash-merge commit of this release-bootstrap PR on
   `main` before the first release (see bootstrap below).
-- CI `.github/workflows/ci.yml`: the full local suite in a single `ci` job,
-  plus actionlint on every workflow file.
+- CI `.github/workflows/ci.yml`: the full local suite in the `ci` job
+  (Linux, the required status check) plus actionlint on every workflow
+  file, with additive Windows test coverage in the separate `windows` job.
 - Rulesets (active): `main` (no deletion, no non-fast-forward, required
   linear history, squash-only pull requests, required signatures), `main
 protection` (one approving review, required status check `ci`), `release-tag
