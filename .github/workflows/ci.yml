@@ -27,16 +27,28 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Format check
+        run: npm run format:check
+
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Knip
+        run: npm run knip
+
+      - name: Test
+        run: npm test
 
       - name: Install actionlint (pinned v1.7.12)
         run: |
           curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar -xz actionlint
           chmod +x actionlint
 
+      # Lint every workflow file (the self-release caller included). The
+      # targeted `queue` ignore is required by the caller's
+      # `concurrency.queue: max`, which actionlint v1.7.12 predates.
       - name: Lint workflows
-        run: ./actionlint -ignore 'property "workflow_repository" is not defined' -ignore 'property "workflow_sha" is not defined' .github/workflows/release.yml .github/workflows/ci.yml
+        run: ./actionlint -ignore 'property "workflow_repository" is not defined' -ignore 'property "workflow_sha" is not defined' -ignore 'unexpected key "queue" for "concurrency" section' .github/workflows/*.yml
 
       - name: Pack and CLI smoke test
         shell: bash
