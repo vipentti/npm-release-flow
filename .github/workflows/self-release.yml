@@ -1,0 +1,28 @@
+name: self-release
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+  queue: max
+
+jobs:
+  release:
+    # Thin caller only: no copied release logic, no inputs. The workflow is
+    # pinned to a full commit SHA; advance it in an ordinary PR after each
+    # self-release (see RELEASE.md).
+    uses: vipentti/npm-release-flow/.github/workflows/release.yml@764e09cf642997b736663e1711e69bbb6d71a43e
+    permissions:
+      contents: write
+      pull-requests: read
+      id-token: write
+    secrets:
+      NPM_RELEASE_FLOW_GPG_PRIVATE_KEY: ${{ secrets.NPM_RELEASE_FLOW_GPG_PRIVATE_KEY }}
+      NPM_RELEASE_FLOW_GPG_PASSPHRASE: ${{ secrets.NPM_RELEASE_FLOW_GPG_PASSPHRASE }}
+      NPM_RELEASE_FLOW_GPG_PUBLIC_KEY: ${{ secrets.NPM_RELEASE_FLOW_GPG_PUBLIC_KEY }}
+      NPM_RELEASE_FLOW_APP_PRIVATE_KEY: ${{ secrets.NPM_RELEASE_FLOW_APP_PRIVATE_KEY }}

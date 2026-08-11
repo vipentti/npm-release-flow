@@ -32,6 +32,88 @@ export function win32Shell(platform = process.platform) {
 }
 
 /**
+ * Convert a native Windows absolute path to the MSYS2 form the Git-bundled
+ * MSYS2 tools (gpg, tar) read correctly, e.g. `C:\foo\bar` -> `/c/foo/bar`.
+ * Passed a native path, those binaries misread it as cwd-relative on win32
+ * (`gpg: keyblock resource '<cwd>/C:\...' No such file or directory`), so
+ * every path handed to a MSYS2 tool is converted here. Verified: the mixed
+ * `C:/...` form fails with the Git-bundled gpg and tar exactly like the
+ * native backslash form, so `/c/...` is required, not just preferred. No-op
+ * on POSIX and for non-drive-letter paths, so CI and the kit behavior are
+ * unchanged. Note: tar is handled separately (tarPath detects whether the
+ * resolved tar is GNU/MSYS or native bsdtar and picks the form it reads);
+ * gpg always receives the MSYS form, so a custom native (non-MSYS)
+ * `gpg.program` remains unsupported. The Git-bundled tools are the default
+ * on Windows (Git for Windows on PATH).
+ *
+ * @param {string} path
+ * @param {NodeJS.Platform} [platform]
+ * @returns {string}
+ */
+export function msysPath(path, platform = process.platform) {
+  if (platform !== "win32") return path;
+  const match = /^([A-Za-z]):[\\/](.*)$/.exec(path);
+  if (match === null) return path;
+  return `/${match[1].toLowerCase()}/${match[2].replace(/\\/g, "/")}`;
+}
+
+/** @type {boolean | null} */
+let gnuTarResult = null;
+
+/**
+ * Whether the `tar` resolved on PATH is the Git-bundled GNU tar (an MSYS2
+ * binary) rather than a native build (Windows ships bsdtar at
+ * `System32\tar.exe`). Detected once per process from `tar --version`;
+ * GNU tar identifies as `tar (GNU tar) ...`, bsdtar as `bsdtar ...`.
+ *
+ * @returns {boolean}
+ */
+export function tarIsGnu() {
+  if (gnuTarResult !== null) return gnuTarResult;
+  try {
+    const result = runSync("tar", ["--version"]);
+    gnuTarResult = /GNU tar/.test(result.stdout + result.stderr);
+  } catch {
+    gnuTarResult = false;
+  }
+  return gnuTarResult;
+}
+
+/**
+ * The path form the resolved `tar` expects on win32: the MSYS2 form for the
+ * Git-bundled GNU tar, the native path for a native build (bsdtar reads
+ * native paths and misreads `/c/...` as drive-relative). No-op on POSIX,
+ * so CI (Linux) and the kit behavior are unchanged.
+ *
+ * @param {string} path
+ * @returns {string}
+ */
+export function tarPath(path) {
+  if (process.platform !== "win32") return path;
+  return tarIsGnu() ? msysPath(path) : path;
+}
+
+/**
+ * Normalize the signing home for a child process on win32: git's own
+ * `commit -S`/`tag -s` spawn gpg itself reading `GNUPGHOME` from the
+ * environment, and the Git-bundled gpg misreads a native drive-letter path
+ * as cwd-relative. So the MSYS form is handed to any subprocess that may
+ * sign, at the product boundary (callers and fixtures keep the native
+ * value). No-op on POSIX and when `GNUPGHOME` is unset or already in MSYS
+ * form, so CI and non-signing behavior are unchanged.
+ *
+ * @param {NodeJS.ProcessEnv | undefined} env
+ * @param {NodeJS.Platform} [platform]
+ * @returns {NodeJS.ProcessEnv | undefined}
+ */
+export function gpgHomeEnv(env, platform = process.platform) {
+  if (platform !== "win32" || env === undefined || !env.GNUPGHOME) return env;
+  const converted = msysPath(env.GNUPGHOME, platform);
+  if (converted === env.GNUPGHOME) return env;
+  return { ...env, GNUPGHOME: converted };
+}
+
+/**
  * Quote a single argument for cmd.exe: wrap in double quotes when it is empty
  * or contains whitespace or a cmd metacharacter (`&|<>()^"` separators, `,;=`
  * argument separators, `%!` variable syntax), doubling embedded quotes. `%`

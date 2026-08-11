@@ -20,7 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { git } from "../../src/lib/repo-state.mjs";
-import { runSync } from "../../src/lib/spawn.mjs";
+import { msysPath, runSync } from "../../src/lib/spawn.mjs";
 import { cutChangelog } from "../../src/lib/changelog.mjs";
 
 /**
@@ -829,6 +829,12 @@ let sharedSigningHome = null;
 function createSharedSigningHome() {
   if (sharedSigningHome === null) {
     const home = mkdtempSync(join(tmpdir(), "npmrf-gnupg-"));
+    // The home stays native: the tests spread it into child envs exactly as
+    // a Windows caller would, and the product boundary (git() and
+    // gpgHomeArgs) normalizes it to the MSYS form for the Git-bundled gpg.
+    // Only these direct fixture gpg calls convert, because they bypass the
+    // kit's subprocess boundary.
+    const gpgHome = msysPath(home);
     const params = [
       "%no-protection",
       "Key-Type: eddsa",
@@ -840,13 +846,13 @@ function createSharedSigningHome() {
       "%commit",
       "",
     ].join("\n");
-    runSync("gpg", ["--batch", "--homedir", home, "--gen-key"], {
+    runSync("gpg", ["--batch", "--homedir", gpgHome, "--gen-key"], {
       input: params,
     });
     const list = runSync("gpg", [
       "--batch",
       "--homedir",
-      home,
+      gpgHome,
       "--list-secret-keys",
       "--with-colons",
     ]);
@@ -890,7 +896,7 @@ export function gpgFixtureUsable() {
     // The env-var path is what git commit -S uses; if gpg ignores it, the
     // fixture key is not signable and the execute tests cannot run.
     runSync("gpg", ["--batch", "--list-secret-keys", fingerprint], {
-      env: { ...process.env, GNUPGHOME: home },
+      env: { ...process.env, GNUPGHOME: msysPath(home) },
     });
     gpgFixtureUsableResult = true;
   } catch {

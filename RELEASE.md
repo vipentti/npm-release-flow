@@ -1,76 +1,204 @@
-# Release prerequisites
+# Release checklist
 
-This repository is the npm-release-flow kit: the `@vipentti/npm-release-flow` npm package and the
-reusable `.github/workflows/release.yml` workflow (one repository, one version, blueprint §3).
-This page is the release checklist for this repository, the kit releasing itself. Consumers
-receive their own copy of these requirements when they adopt the kit.
+This repository is the npm-release-flow kit: the `@vipentti/npm-release-flow`
+npm package and the reusable `.github/workflows/release.yml` workflow (one
+repository, one version). This page is the self-release checklist for this
+repository; consumers receive their own copy of the requirements when they
+adopt the workflow (see README.md).
 
-Blueprint pin: `vipentti/agent-blueprints` @ `f9d06c77b9920e4cfab774d254f22d60894c1f05`,
-`blueprints/npm-release-flow.md`. Section numbers below refer to that document.
+Everything a reader needs is in this file. Historical provenance only: the
+accepted architecture lives in `vipentti/agent-blueprints`
+(`blueprints/npm-release-flow.md`, pinned to commit
+`f9d06c77b9920e4cfab774d254f22d60894c1f05`); nothing below requires access
+to it.
 
-## Secrets (Actions, repository scope)
+## Automated / repository state (implemented)
 
-All four are named in the reusable workflow with `required: true`; a caller missing one fails at
-call time (T10).
+- Reusable workflow `.github/workflows/release.yml`: `detect`, `verify`, and
+  a protected `release` job. No inputs; four named, required secrets. See
+  README.md for the caller contract.
+- Self-release caller `.github/workflows/self-release.yml`: pushes to `main`
+  only, pinned to the full commit SHA `764e09cf642997b736663e1711e69bbb6d71a43e`
+  (the kit at version `0.0.0`). This is the pre-first-release pin; it must
+  advance to the actual squash-merge commit of this release-bootstrap PR on
+  `main` before the first release (see bootstrap below).
+- CI `.github/workflows/ci.yml`: the full local suite in the `ci` job
+  (Linux, the required status check) plus actionlint on every workflow
+  file, with additive Windows test coverage in the separate `windows` job.
+- Rulesets (active): `main` (no deletion, no non-fast-forward, required
+  linear history, squash-only pull requests, required signatures), `main
+protection` (one approving review, required status check `ci`), `release-tag
+creation`, and `release-tag immutability`.
+- The `release` Environment exists, **without** a required reviewer: the
+  `required_reviewers` protection rule is only available on public
+  repositories, and this repository is still private. Add the rule when it
+  goes public (see below).
+- The kit's own mandatory consumer prerequisites are in place:
+  `CHANGELOG.md` with a non-empty `## [Unreleased]` and the `release:verify`
+  script.
+- CLI `prepare` / `tag` / `check` with dry-run default and `--execute`.
 
-| Secret                             | Purpose                                                       |
-| ---------------------------------- | ------------------------------------------------------------- |
-| `NPM_RELEASE_FLOW_GPG_PRIVATE_KEY` | GPG private key; signs the release tag (§6)                   |
-| `NPM_RELEASE_FLOW_GPG_PASSPHRASE`  | Passphrase for the private key (§6)                           |
-| `NPM_RELEASE_FLOW_GPG_PUBLIC_KEY`  | Public key; verify-only reruns, private key never loaded (§6) |
-| `NPM_RELEASE_FLOW_APP_PRIVATE_KEY` | GitHub App private key; the only tag-push identity (T11)      |
+## Human-required setup
 
-## Variables (Actions, repository scope)
+### Secrets (Actions, repository scope)
 
-| Variable                           | Purpose                                               |
-| ---------------------------------- | ----------------------------------------------------- |
-| `NPM_RELEASE_FLOW_GPG_FINGERPRINT` | Primary fingerprint the tag signature must match (§6) |
-| `NPM_RELEASE_FLOW_GIT_NAME`        | Git identity used for release commits and tags        |
-| `NPM_RELEASE_FLOW_GIT_EMAIL`       | Git identity used for release commits and tags        |
-| `NPM_RELEASE_FLOW_APP_ID`          | GitHub App id of the tag-push identity (§6)           |
+| Secret                             | Purpose                                                  |
+| ---------------------------------- | -------------------------------------------------------- |
+| `NPM_RELEASE_FLOW_GPG_PRIVATE_KEY` | GPG private key; signs the release tag                   |
+| `NPM_RELEASE_FLOW_GPG_PASSPHRASE`  | Passphrase for the private key                           |
+| `NPM_RELEASE_FLOW_GPG_PUBLIC_KEY`  | Public key; verify-only reruns, private key never loaded |
+| `NPM_RELEASE_FLOW_APP_PRIVATE_KEY` | GitHub App private key; the only tag-push identity       |
 
-## Release environment
+All four are named in the reusable workflow with `required: true`; a caller
+missing one fails at call time. Each release path asserts non-empty the
+secrets it actually uses before mutation (see Secret contract below).
 
-- A `release` Environment must exist: the GitHub Environment approval gates publication (T3).
-  `environment: release` is a fixed convention, never an input.
-- Current state (2026-08, initial setup): the Environment exists **without** a required reviewer:
-  the `required_reviewers` protection rule is only available on public repositories under the
-  current billing plan (planlet, public, has it; this repository is private). When the repository
-  goes public (blueprint §10 step 2), add the rule with
-  `gh api --method PUT repos/vipentti/npm-release-flow/environments/release --input env.json` and
-  body `{"reviewers":[{"type":"User","id":<owner id>}]}`. Until then no approval gate exists;
-  first release stays manual (checklist below).
+### Variables (Actions, repository scope)
 
-## GitHub App
+| Variable                           | Purpose                                          |
+| ---------------------------------- | ------------------------------------------------ |
+| `NPM_RELEASE_FLOW_GPG_FINGERPRINT` | Primary fingerprint the tag signature must match |
+| `NPM_RELEASE_FLOW_GIT_NAME`        | Git identity used for release commits and tags   |
+| `NPM_RELEASE_FLOW_GIT_EMAIL`       | Git identity used for release commits and tags   |
+| `NPM_RELEASE_FLOW_APP_ID`          | GitHub App id of the tag-push identity           |
 
-- The release App must be installed on this repository, scoped `contents: write`. It is the only
-  identity allowed to push release tags; there is no `github.token` fallback (T11).
+### GitHub App
 
-## Toolchain pins (§7)
+Install the release App on this repository, scoped `contents: write`. It is
+the only identity allowed to push release tags; there is no `github.token`
+fallback.
 
-- Protected job: Node `24.11.1` with npm `11.6.2`, asserted by exact version match, fail closed
-  before any mutation.
-- Verify job: the consumer's Node, read from `engines.node`; absent, fallback Node `22`.
-- Floor (npm Trusted Publishing): npm CLI >= 11.5.1, Node >= 22.14.0. The v1 pin clears both.
+### Release Environment required reviewer
 
-## Trusted Publisher
+When the repository is public, add the required-reviewer rule with (replace
+`<owner id>` with the reviewer's GitHub user id):
 
-- npm Trusted Publishing validates the **calling** workflow's filename, not the workflow that
-  contains the publish command. A consumer's Trusted Publisher config must name the consumer's own
-  workflow file, exactly. Strong recommendation: `.github/workflows/release.yml`. The kit cannot
-  enforce the name; it is documented loudly instead.
+```sh
+gh api --method PUT repos/vipentti/npm-release-flow/environments/release \
+  --input - <<'EOF'
+{"reviewers":[{"type":"User","id":<owner id>}]}
+EOF
+```
 
-## First-release checklist (§10)
+Until then no approval gate exists and the first release stays manual
+(bootstrap below).
 
-1. Workflow file exists in the repository.
-2. Manual first publish with a token, once: a brand-new package cannot OIDC-publish its first
-   version (the trusted publisher must be configured on npmjs.com and the workflow file must
-   already exist in the repository).
-3. Configure the trusted publisher on npmjs.com: repository, workflow filename, allowed action
-   `npm publish`.
-4. Secrets and variables above.
-5. `release` Environment with a required reviewer.
-6. App installation (mandatory, §6).
-7. `repository.url` in `package.json` exactly matches the GitHub repository.
+### Trusted Publisher
 
-After the first publish the kit releases itself with its own workflow (dogfooding, §10).
+npm Trusted Publishing validates the **calling** workflow's filename, not
+the workflow that contains the publish command. npm matches the filename
+only, so the Trusted Publisher on npmjs.com must name exactly
+`self-release.yml` (repository `vipentti/npm-release-flow`, environment
+`release`, allowed action `npm publish`). Bind the environment field to
+`release`: that is where the OIDC-bearing publish job is gated by the
+Environment approval.
+
+## Before making the repository public
+
+Merge this release-bootstrap PR while the repository is still private, and
+only then change visibility. In order:
+
+1. Merge this PR (`public-release-bootstrap`) while the repository is still
+   private. Going public first would expose the old README, no SECURITY.md,
+   the old CI, and no self-release caller for some interval: this PR is the
+   public-readiness work, so it must land on `main` before the visibility
+   change.
+2. Confirm the resulting `main` CI (the `ci` check) is green.
+3. Run/confirm the final pre-public checks against that resulting `main`:
+   `npm run release:verify`, actionlint on all workflow files,
+   `npm pack --dry-run` inspection, and the gitleaks history scan (a full
+   local clone; if the scan could not run, run it before the visibility
+   change).
+4. Make the repository public (Settings, Danger Zone). This is what unlocks
+   the `required_reviewers` Environment rule.
+
+## First npm release (exact bootstrap order)
+
+The package does not exist on the registry yet, and a brand-new package
+cannot OIDC-publish its first version: npm requires the package to already
+exist before Trusted Publishing can be configured. So the bootstrap
+publishes a throwaway `0.0.0` under a non-default `bootstrap` dist-tag, and
+the first real automated release (for example `1.0.0`) is the one published
+through Trusted Publishing with provenance. The release-diff allowlist
+permits exactly `CHANGELOG.md`, `package.json`, and `package-lock.json` in a
+release PR, so the control-file changes below live in ordinary PRs. Follow
+this order exactly:
+
+1. Merge this release-bootstrap PR, confirm the resulting `main` CI is
+   green, and run/confirm the final pre-public checks against that `main`,
+   all while the repository is still private; then make the repository
+   public (above).
+2. In an **ordinary PR**, advance the caller pin to this PR's **actual
+   squash-merge commit on `main`** and remove `"private": true`, keeping the
+   version `0.0.0`: update `.github/workflows/self-release.yml` and the
+   README caller example to that commit's SHA (full 40-character SHA), and
+   drop `"private": true` from `package.json`. The pin is the commit that
+   lands on `main` after the squash merge, not the PR head (`ba23fe3...`)
+   and not GitHub's pre-merge synthetic merge SHA. Until that SHA exists,
+   the self-release caller correctly remains pinned to the old known commit
+   `764e09cf642997b736663e1711e69bbb6d71a43e`. Merge it. The pin advance
+   is required before the
+   first release: the called workflow checks out the kit at the pin, and the
+   skew guard compares only the semantic version, so a stale pin would run
+   the pre-merge kit source while passing the guard as equivalent
+   (`0.0.0` == `0.0.0`). `"private": true` cannot be removed inside a
+   release PR: that would change a fourth file and invalidate the release
+   diff.
+3. Manually publish `0.0.0` as a bootstrap-tagged package (the registry
+   prerequisite) with an npm auth token, explicitly public and pinned to
+   npmjs.org:
+
+   ```sh
+   npm publish --tag bootstrap --access public --registry https://registry.npmjs.org
+   ```
+
+   The package is scoped (`@vipentti/npm-release-flow`), so an initial
+   public scoped publish must pass `--access public`; and `--registry`
+   pins npmjs.org so a scope-level registry redirect cannot route the
+   first publication elsewhere (the automated release pins the same
+   registry). The workflow never verifies or publishes `0.0.0` (the first
+   automated release is a higher version), so no `gitHead` handling is
+   needed; deprecate it later if desired:
+
+   ```sh
+   npm deprecate @vipentti/npm-release-flow@0.0.0 "bootstrap version"
+   ```
+
+4. Configure Trusted Publishing on npmjs.com (filename `self-release.yml`,
+   environment `release`, see above), set the secrets and variables above,
+   add the required reviewer on the `release` Environment, and install the
+   App.
+5. From that `0.0.0` main, run (from a checkout, as the package is not yet
+   releasable)
+   `node bin/npm-release-flow.mjs prepare --version <first>` (for example
+   `1.0.0`). The release PR body marker stays
+   `Kit: @vipentti/npm-release-flow@0.0.0` because the kit checkout at the
+   pin is still `0.0.0`, which matches the marker.
+6. Merge the release PR. The self-release runs; the `release` job waits on
+   the Environment approval gate, then creates the tag and publishes
+   `<first>` through `npm publish --provenance` (the absent-version path;
+   verify-or-idempotent against the registry).
+7. Afterward, advance the caller pin in an ordinary PR (below).
+
+## After each release (caller pin advance)
+
+The self-release caller pins the workflow to a full 40-character commit SHA,
+and the README caller example carries the same pin. After each self-release,
+advance both to the release commit in a follow-up ordinary PR, always a full
+40-character SHA (never a branch or tag). The release-diff allowlist is
+exactly the three control files, so the pin cannot move inside a release PR;
+and a stale pin fails the next release's marker check (`detect` compares the
+PR body's `Kit: @vipentti/npm-release-flow@<v>` marker against the kit
+checkout version at the pin) or runs the wrong kit source while the version
+guard still passes.
+
+## Secret contract
+
+Unset secret expressions evaluate to the empty string (GitHub-documented).
+Ordinary pushes are non-release detection runs and stay green; only release
+attempts cannot complete until the secrets a path needs exist. Each release
+path asserts non-empty the secrets it actually uses before any mutation: the
+verify-only path (`tag-exists=true`) asserts `NPM_RELEASE_FLOW_GPG_PUBLIC_KEY`;
+the tag-creation path (`tag-exists=false`) asserts
+`NPM_RELEASE_FLOW_GPG_PRIVATE_KEY`, `NPM_RELEASE_FLOW_GPG_PASSPHRASE`, and
+`NPM_RELEASE_FLOW_APP_PRIVATE_KEY`.

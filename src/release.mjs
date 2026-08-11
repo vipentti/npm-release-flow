@@ -80,8 +80,9 @@ export function createAndPushTag({
 }) {
   const ctx = { cwd, env };
   const tagRef = `refs/tags/v${version}`;
-  runSync(
-    "git",
+  // Signing goes through the git() product boundary so a native GNUPGHOME
+  // is normalized to the MSYS form on win32 (git tag -s spawns gpg itself).
+  git(
     [
       "tag",
       "-a",
@@ -102,8 +103,7 @@ export function createAndPushTag({
     cwd,
     env,
   });
-  runSync(
-    "git",
+  git(
     [
       "-c",
       `http.extraheader=Authorization: Bearer ${appToken}`,
@@ -144,7 +144,7 @@ export function verifyOnlyTag({ version, targetSha, fingerprint, cwd, env }) {
   const tagRef = `refs/tags/v${version}`;
   // Explicit refspec (destination written): a lightweight remote tag would
   // not create a local ref with the implicit `fetch origin <ref>` form.
-  runSync("git", ["fetch", "origin", `+${tagRef}:${tagRef}`], ctx);
+  git(["fetch", "origin", `+${tagRef}:${tagRef}`], ctx);
   return verifyTagObject({ version, targetSha, fingerprint, cwd, env });
 }
 

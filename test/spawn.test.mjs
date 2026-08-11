@@ -10,6 +10,10 @@ import {
   refProbeSync,
   win32CommandLine,
   win32Shell,
+  msysPath,
+  gpgHomeEnv,
+  tarPath,
+  tarIsGnu,
 } from "../src/lib/spawn.mjs";
 
 const node = process.execPath;
@@ -141,6 +145,50 @@ test("win32CommandLine quotes arguments with spaces or metacharacters", () => {
     win32CommandLine("gh", ["--json", "number,state,url"]),
     '"gh --json "number,state,url""',
   );
+});
+
+test("msysPath converts native Windows paths on win32 only", () => {
+  // Win32: drive letter lowercased, backslashes to forward slashes.
+  assert.equal(
+    msysPath("C:\\Users\\Ville\\AppData\\Local\\Temp\\npmrf-gnupg-1", "win32"),
+    "/c/Users/Ville/AppData/Local/Temp/npmrf-gnupg-1",
+  );
+  assert.equal(msysPath("D:/x/y.tgz", "win32"), "/d/x/y.tgz");
+  // Already in MSYS form, or no drive letter: unchanged.
+  assert.equal(msysPath("/c/Users/Ville/x", "win32"), "/c/Users/Ville/x");
+  assert.equal(msysPath("relative\\path", "win32"), "relative\\path");
+  // POSIX: always unchanged.
+  assert.equal(msysPath("C:\\Users\\Ville\\x", "linux"), "C:\\Users\\Ville\\x");
+});
+
+test("gpgHomeEnv normalizes GNUPGHOME on win32 at the subprocess boundary", () => {
+  // Win32: native GNUPGHOME is converted to the MSYS form in a new env.
+  const native = { GNUPGHOME: "C:\\Users\\Ville\\gnupg", OTHER: "keep" };
+  const converted = gpgHomeEnv(native, "win32");
+  assert.notEqual(converted, native);
+  assert.equal(converted.GNUPGHOME, "/c/Users/Ville/gnupg");
+  assert.equal(converted.OTHER, "keep");
+  // Already MSYS form, or unset: same env object (no copy).
+  const msys = { GNUPGHOME: "/c/Users/Ville/gnupg" };
+  assert.equal(gpgHomeEnv(msys, "win32"), msys);
+  const empty = {};
+  assert.equal(gpgHomeEnv(empty, "win32"), empty);
+  // POSIX: unchanged regardless of value.
+  const posix = { GNUPGHOME: "C:\\Users\\Ville\\gnupg" };
+  assert.equal(gpgHomeEnv(posix, "linux"), posix);
+  assert.equal(gpgHomeEnv(undefined, "win32"), undefined);
+});
+
+test("tarPath uses the resolved tar's path form on win32 only", () => {
+  const native = "C:\\Users\\x\\AppData\\Local\\Temp\\t.tgz";
+  if (process.platform === "win32") {
+    // The Git-bundled GNU tar gets the MSYS form; a native build keeps the
+    // native path. tarIsGnu resolves which one is on PATH.
+    assert.equal(tarPath(native), tarIsGnu() ? msysPath(native) : native);
+  } else {
+    assert.equal(tarPath(native), native);
+    assert.equal(tarPath("/tmp/t.tgz"), "/tmp/t.tgz");
+  }
 });
 
 test("runAsync resolves with captured output", async () => {

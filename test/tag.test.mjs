@@ -419,6 +419,7 @@ test(
     const blockedPath = appEnv.PATH;
     const runEnv = {
       ...appEnv,
+      GIT_FIXTURE_CALLS: recorder.callsFile,
       PATH:
         recorder.dir + (process.platform === "win32" ? ";" : ":") + blockedPath,
     };
@@ -492,6 +493,7 @@ test(
       const recorder = createGitRecorder(fixture.base);
       const runEnv = {
         ...firstEnv,
+        GIT_FIXTURE_CALLS: recorder.callsFile,
         PATH:
           recorder.dir +
           (process.platform === "win32" ? ";" : ":") +
@@ -526,6 +528,7 @@ test(
     const appEnv = withAppMaterial(fixture, env);
     const runEnv = {
       ...appEnv,
+      GIT_FIXTURE_CALLS: recorder.callsFile,
       PATH:
         recorder.dir + (process.platform === "win32" ? ";" : ":") + appEnv.PATH,
     };

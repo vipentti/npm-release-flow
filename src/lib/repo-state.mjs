@@ -4,7 +4,7 @@
  * only shapes git/gh invocations.
  */
 
-import { runSync, refProbeSync } from "./spawn.mjs";
+import { gpgHomeEnv, runSync, refProbeSync } from "./spawn.mjs";
 import { CommandError } from "./errors.mjs";
 
 /**
@@ -21,7 +21,11 @@ import { CommandError } from "./errors.mjs";
  * @returns {import("./spawn.mjs").SpawnResult}
  */
 export function git(args, options = {}) {
-  return runSync("git", args, options);
+  // Product boundary for git's own signing: `commit -S`/`tag -s` spawn gpg
+  // themselves reading GNUPGHOME from the environment, so a native
+  // drive-letter GNUPGHOME is normalized to the MSYS form here (win32 only)
+  // for every git subprocess. No-op on POSIX.
+  return runSync("git", args, { ...options, env: gpgHomeEnv(options.env) });
 }
 
 /**

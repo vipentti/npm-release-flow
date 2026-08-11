@@ -9,6 +9,11 @@ permissions:
   contents: read
 
 jobs:
+  # The authoritative, required gate: the `main protection` ruleset requires
+  # the status check named plain `ci`. A matrix would emit
+  # `ci (ubuntu-latest)` / `ci (windows-latest)` and break that contract, so
+  # this job keeps the plain name and Windows coverage is the separate,
+  # additive `windows` job below.
   ci:
     runs-on: ubuntu-latest
     steps:
@@ -24,19 +29,35 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The static checks and the full suite are OS-independent; they run
+      # once here on the Linux leg (the required `ci` gate).
       - name: Lint
         run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
 
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Knip
+        run: npm run knip
+
+      - name: Test
+        run: npm test
+
+      # actionlint lints the same workflow YAML on every runner; running it
+      # once here (where the pinned linux binary is downloaded) suffices.
       - name: Install actionlint (pinned v1.7.12)
         run: |
           curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar -xz actionlint
           chmod +x actionlint
 
+      # Lint every workflow file (the self-release caller included). The
+      # targeted `queue` ignore is required by the caller's
+      # `concurrency.queue: max`, which actionlint v1.7.12 predates.
       - name: Lint workflows
-        run: ./actionlint -ignore 'property "workflow_repository" is not defined' -ignore 'property "workflow_sha" is not defined' .github/workflows/release.yml .github/workflows/ci.yml
+        run: ./actionlint -ignore 'property "workflow_repository" is not defined' -ignore 'property "workflow_sha" is not defined' -ignore 'unexpected key "queue" for "concurrency" section' .github/workflows/*.yml
 
       - name: Pack and CLI smoke test
         shell: bash
@@ -52,3 +73,46 @@ jobs:
           fi
           echo "$output" | grep -F 'usage: npm-release-flow'
           echo "CLI smoke test passed"
+
+  # Additive Windows coverage, not a required gate: the test suite is what
+  # exercises the Windows-specific path handling (MSYS gpg/tar, cmd spawn,
+  # git signing). Repeating the OS-independent static checks here would add
+  # redundant wall time, so this job runs npm ci + npm test only.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      # The Windows signing tests need a real MSYS gpg; Git for Windows
+      # ships it in usr/bin. Ensure it is on PATH so the execute-with-
+      # signing tests run on the Windows runner too (gpgFixtureUsable
+      # skips them when it is not resolvable).
+      - name: Add Git's MSYS gpg to PATH (Windows)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v gpg >/dev/null 2>&1; then
+            echo "gpg already on PATH: $(command -v gpg)"
+          else
+            echo "C:/Program Files/Git/usr/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Windows runners are 2-core, so node --test's default concurrency is
+      # 1 and the subprocess-heavy integration tests run serially. The tests
+      # spend most of their time waiting on git/gpg/npm children, so more
+      # file-level concurrency overlaps that wait on the Windows job.
+      - name: Test
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test -- --test-concurrency=4
