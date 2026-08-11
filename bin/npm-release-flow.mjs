@@ -7,10 +7,9 @@
  */
 
 import { parseArgs } from "node:util";
-import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
 
 import { CliError, ExitCode } from "../src/lib/errors.mjs";
+import { runAsScript } from "../src/lib/run-script.mjs";
 import { prepare } from "../src/commands/prepare.mjs";
 import { tag } from "../src/commands/tag.mjs";
 import { check } from "../src/commands/check.mjs";
@@ -146,11 +145,4 @@ export async function main(argv = process.argv.slice(2), options = {}) {
 
 // Run the CLI only when invoked directly; importing the bin for tests or for
 // the programmatic surface must not execute it.
-if (
-  process.argv[1] !== undefined &&
-  fileURLToPath(import.meta.url) === resolve(process.argv[1])
-) {
-  main().then((code) => {
-    process.exitCode = code;
-  });
-}
+runAsScript(import.meta.url, main);

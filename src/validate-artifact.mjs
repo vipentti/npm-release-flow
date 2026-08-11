@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { describeFailure } from "./lib/errors.mjs";
 import { runSync, tarPath } from "./lib/spawn.mjs";
 import { CommandError } from "./lib/errors.mjs";
+import { runAsScript } from "./lib/run-script.mjs";
 import {
   integrityOfFile,
   sha256OfFile,
@@ -233,3 +234,5 @@ export async function validateArtifact(options = {}) {
   }
   return 0;
 }
+
+runAsScript(import.meta.url, validateArtifact);

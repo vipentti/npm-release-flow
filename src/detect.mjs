@@ -20,6 +20,7 @@ import { git, gh, localRefSha } from "./lib/repo-state.mjs";
 import { parseStableVersion } from "./lib/versions.mjs";
 import { classifyRelease } from "./lib/release-state.mjs";
 import { mandatoryPrerequisiteProblem } from "./lib/control-files.mjs";
+import { runAsScript } from "./lib/run-script.mjs";
 
 const zeroSha = "0000000000000000000000000000000000000000";
 const shaPattern = /^[0-9a-f]{40}$/;
@@ -365,3 +366,5 @@ export async function detect(options = {}) {
   }
   return fail(verdict.reasons[0] ?? "the push is not a valid release");
 }
+
+runAsScript(import.meta.url, detect);
