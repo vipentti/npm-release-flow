@@ -1,0 +1,5 @@
+# Normalize text files to LF on every platform. Git for Windows (and the
+# Windows CI runners) check out with CRLF by default, which makes prettier
+# (endOfLine: lf) fail format:check; pinning eol=lf keeps both the Linux and
+# Windows CI legs green and matches the fixture's LF-only working trees.
+* text=auto eol=lf
