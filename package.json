@@ -30,7 +30,8 @@
     "lint": "eslint \"bin/**/*.mjs\" \"src/**/*.mjs\" \"test/**/*.mjs\" eslint.config.mjs",
     "test": "node --test",
     "typecheck": "tsc",
-    "format": "prettier --write package.json tsconfig.json eslint.config.mjs knip.json \".github/workflows/*.yml\" README.md RELEASE.md \"bin/**/*.mjs\" \"src/**/*.mjs\" \"test/**/*.mjs\""
+    "format": "prettier --write package.json tsconfig.json eslint.config.mjs knip.json \".github/workflows/*.yml\" README.md RELEASE.md \"bin/**/*.mjs\" \"src/**/*.mjs\" \"test/**/*.mjs\"",
+    "release:verify": "npm run lint && npm run format:check && npm run typecheck && npm run knip && npm test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
