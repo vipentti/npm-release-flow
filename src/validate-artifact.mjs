@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { describeFailure } from "./lib/errors.mjs";
-import { runSync } from "./lib/spawn.mjs";
+import { msysPath, runSync } from "./lib/spawn.mjs";
 import { CommandError } from "./lib/errors.mjs";
 import {
   integrityOfFile,
@@ -180,7 +180,13 @@ export async function validateArtifact(options = {}) {
   );
   mkdirSync(extractDir, { recursive: true });
   try {
-    runSync("tar", ["-xzf", tarballPath, "-C", extractDir], { cwd, env });
+    // The Git-bundled tar is an MSYS2 binary that misreads native Windows
+    // paths as cwd-relative; hand it the MSYS form on win32 only.
+    runSync(
+      "tar",
+      ["-xzf", msysPath(tarballPath), "-C", msysPath(extractDir)],
+      { cwd, env },
+    );
     const manifest = JSON.parse(
       readFileSync(join(extractDir, "package", "package.json"), "utf8"),
     );

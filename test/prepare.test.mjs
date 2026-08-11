@@ -205,7 +205,7 @@ test(
           ? git(["rev-parse", "main"], { cwd: fixture.consumer }).stdout.trim()
           : "",
       );
-      git(["verify-commit", "HEAD"], { cwd: fixture.consumer });
+      git(["verify-commit", "HEAD"], { cwd: fixture.consumer, env });
       const changed = git(
         ["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
         { cwd: fixture.consumer },
@@ -236,7 +236,7 @@ test(
       const calls = ghCalls(fixture);
       const prCreate = calls.find((call) => call[1] === "create");
       assert.ok(prCreate, "gh pr create was called");
-      assert.deepEqual(prCreate.slice(1, 5), [
+      assert.deepEqual(prCreate.slice(1, 4), [
         "create",
         "--title",
         "release: 1.2.3",

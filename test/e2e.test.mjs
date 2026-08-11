@@ -30,6 +30,7 @@ import { git, remoteRefSha, localRefSha } from "../src/lib/repo-state.mjs";
 import { sha256OfFile } from "../src/lib/pack-contract.mjs";
 import { runSync } from "../src/lib/spawn.mjs";
 import {
+  addKitDevDependency,
   createFixtureRepo,
   createReleaseMerge,
   createSigningHome,
@@ -77,6 +78,19 @@ test(
       };
       const outputFile = join(fixture.base, "output.txt");
       writeFileSync(outputFile, "");
+      // A normal consumer (CALLER_REPOSITORY differs from the fixture's own
+      // repository.url), so the pin agreement is enforced and the kit must be
+      // installed as a devDependency at the checkout version before verify.
+      addKitDevDependency(fixture, { version: "1.0.0" });
+      git(["add", "package.json", "package-lock.json"], {
+        cwd: fixture.consumer,
+      });
+      // The host's global git config may sign by default; the fixture must
+      // not sign this setup commit (only the release commit is signed).
+      git(["commit", "--no-gpg-sign", "-m", "pin kit devDependency"], {
+        cwd: fixture.consumer,
+      });
+      git(["push", "origin", "main"], { cwd: fixture.consumer });
 
       // 1. prepare dry-run: prints the plan, changes nothing, exits 0.
       const dryLines = [];

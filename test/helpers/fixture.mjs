@@ -20,7 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { git } from "../../src/lib/repo-state.mjs";
-import { runSync } from "../../src/lib/spawn.mjs";
+import { msysPath, runSync } from "../../src/lib/spawn.mjs";
 import { cutChangelog } from "../../src/lib/changelog.mjs";
 
 /**
@@ -829,6 +829,11 @@ let sharedSigningHome = null;
 function createSharedSigningHome() {
   if (sharedSigningHome === null) {
     const home = mkdtempSync(join(tmpdir(), "npmrf-gnupg-"));
+    // The Git-bundled gpg is an MSYS2 binary that misreads a native Windows
+    // path as cwd-relative (`gpg: keyblock resource '<cwd>/C:\...'`); hand it
+    // the MSYS form on win32 only, and expose that form as the GNUPGHOME the
+    // tests spread into child envs (git commit -S inherits it unchanged).
+    const gpgHome = msysPath(home);
     const params = [
       "%no-protection",
       "Key-Type: eddsa",
@@ -840,13 +845,13 @@ function createSharedSigningHome() {
       "%commit",
       "",
     ].join("\n");
-    runSync("gpg", ["--batch", "--homedir", home, "--gen-key"], {
+    runSync("gpg", ["--batch", "--homedir", gpgHome, "--gen-key"], {
       input: params,
     });
     const list = runSync("gpg", [
       "--batch",
       "--homedir",
-      home,
+      gpgHome,
       "--list-secret-keys",
       "--with-colons",
     ]);
@@ -856,7 +861,7 @@ function createSharedSigningHome() {
       ?.split(":")[9];
     if (!fpr)
       throw new Error("could not determine the fixture GPG fingerprint");
-    sharedSigningHome = { home, fingerprint: fpr };
+    sharedSigningHome = { home: gpgHome, fingerprint: fpr };
     process.on("exit", () => {
       rmSync(home, { recursive: true, force: true });
     });

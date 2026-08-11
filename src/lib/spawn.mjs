@@ -32,6 +32,26 @@ export function win32Shell(platform = process.platform) {
 }
 
 /**
+ * Convert a native Windows absolute path to the MSYS2/POSIX form the
+ * Git-bundled MSYS2 tools (gpg, tar) read correctly, e.g.
+ * `C:\foo\bar` -> `/c/foo/bar`. Passed a native path, those binaries
+ * misread it as cwd-relative on win32 (`gpg: keyblock resource
+ * '<cwd>/C:\...' No such file or directory`), so every path handed to a
+ * MSYS2 tool is converted here. No-op on POSIX and for non-drive-letter
+ * paths, so CI and the kit behavior are unchanged.
+ *
+ * @param {string} path
+ * @param {NodeJS.Platform} [platform]
+ * @returns {string}
+ */
+export function msysPath(path, platform = process.platform) {
+  if (platform !== "win32") return path;
+  const match = /^([A-Za-z]):[\\/](.*)$/.exec(path);
+  if (match === null) return path;
+  return `/${match[1].toLowerCase()}/${match[2].replace(/\\/g, "/")}`;
+}
+
+/**
  * Quote a single argument for cmd.exe: wrap in double quotes when it is empty
  * or contains whitespace or a cmd metacharacter (`&|<>()^"` separators, `,;=`
  * argument separators, `%!` variable syntax), doubling embedded quotes. `%`
