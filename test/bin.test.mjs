@@ -184,7 +184,7 @@ test("bin: check exits 0 in a fully configured fixture", () => {
       [
         "globalThis.fetch = async (url) => {",
         "  const u = String(url);",
-        '  if (u.endsWith("/installation")) return { ok: true, status: 200, json: async () => ({ id: 9876 }) };',
+        '  if (u.endsWith("/installation")) return { ok: true, status: 200, json: async () => ({ id: 9876, permissions: { contents: "write" } }) };',
         "  return { ok: false, status: 404, json: async () => ({}) };",
         "};",
         "",

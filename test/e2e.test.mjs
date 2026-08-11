@@ -189,7 +189,11 @@ test("e2e: bin exit codes 0/1/2 and error-content through the real CLI", async (
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     if (String(url).endsWith("/installation")) {
-      return { ok: true, status: 200, json: async () => ({ id: 9876 }) };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 9876, permissions: { contents: "write" } }),
+      };
     }
     return { ok: false, status: 404, json: async () => ({}) };
   };

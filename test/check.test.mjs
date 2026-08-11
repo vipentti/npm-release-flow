@@ -28,6 +28,7 @@ import {
  * gh must never answer the App-only endpoint.
  */
 let installationInstalled = true;
+let installationContents = "write";
 /** @type {(() => void) | null} */
 let restoreInstallationStub = null;
 function stubInstallation() {
@@ -36,7 +37,14 @@ function stubInstallation() {
     const u = String(url);
     if (u.endsWith("/installation")) {
       if (installationInstalled) {
-        return { ok: true, status: 200, json: async () => ({ id: 9876 }) };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 9876,
+            permissions: { contents: installationContents },
+          }),
+        };
       }
       return { ok: false, status: 404, json: async () => ({}) };
     }
@@ -48,6 +56,7 @@ function stubInstallation() {
 }
 test.beforeEach(() => {
   installationInstalled = true;
+  installationContents = "write";
   restoreInstallationStub = stubInstallation();
 });
 test.afterEach(() => {
@@ -397,6 +406,33 @@ test("check flags a missing App installation", async () => {
     assert.ok(
       problems.some((p) => /the release GitHub App is installed/.test(p)),
     );
+  } finally {
+    ctx.fixture.cleanup();
+  }
+});
+
+test("check flags an App installed without contents: write", async () => {
+  const ctx = goodCheckFixture();
+  try {
+    installationContents = "read";
+    const problems = [];
+    const code = await check(
+      { execute: false },
+      {
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        log: (line) => problems.push(line),
+      },
+    );
+    assert.equal(code, 1);
+    assert.ok(
+      problems.some((p) =>
+        /Checked: that the release GitHub App has contents: write on example\/fixture-consumer\./.test(
+          p,
+        ),
+      ),
+    );
+    assert.ok(problems.some((p) => /the App has contents: read/.test(p)));
   } finally {
     ctx.fixture.cleanup();
   }

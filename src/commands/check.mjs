@@ -348,12 +348,26 @@ export async function check(args, options = {}) {
       const owner = nameWithOwner.slice(0, slashIndex);
       const repo = nameWithOwner.slice(slashIndex + 1);
       try {
-        await resolveInstallation({
+        const installation = await resolveInstallation({
           appId,
           privateKey: appPrivateKey,
           owner,
           repo,
         });
+        const contentsPermission = installation.permissions?.contents;
+        if (contentsPermission !== "write") {
+          problems.push(
+            describeFailure({
+              checked: `that the release GitHub App has contents: write on ${nameWithOwner}`,
+              found:
+                contentsPermission === undefined
+                  ? "the installation response carries no contents permission"
+                  : `the App has contents: ${contentsPermission}`,
+              correction:
+                "grant the release App contents: write (required for the tag push and GitHub Release)",
+            }),
+          );
+        }
       } catch (err) {
         problems.push(
           describeFailure({

@@ -82,7 +82,14 @@ test("resolveInstallation authenticates with an App JWT and returns the installa
     requestedUrl = String(url);
     authHeader = options?.headers?.Authorization ?? null;
     if (String(url).endsWith("/installation")) {
-      return { ok: true, status: 200, json: async () => ({ id: 9876 }) };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: 9876,
+          permissions: { contents: "write" },
+        }),
+      };
     }
     return { ok: false, status: 404, json: async () => ({}) };
   };
@@ -94,6 +101,11 @@ test("resolveInstallation authenticates with an App JWT and returns the installa
       repo: "fixture-consumer",
     });
     assert.equal(installation.id, 9876);
+    assert.equal(
+      installation.permissions?.contents,
+      "write",
+      "the installation record preserves the granted permissions",
+    );
     assert.equal(
       requestedUrl,
       "https://api.github.com/repos/example/fixture-consumer/installation",

@@ -76,10 +76,17 @@ function appHeaders(appId, privateKey) {
  * authentication. `GET /repos/{owner}/{repo}/installation` is documented
  * as App-JWT-only: user access tokens, installation access tokens, and
  * fine-grained PATs cannot read it. Shared by `mintAppToken` (the token
- * exchange) and the `check` command's installation readiness probe.
+ * exchange) and the `check` command's installation readiness probe. The
+ * full installation record is returned (including the granted repository
+ * permissions) so callers can verify readiness, not just existence.
+ *
+ * @typedef {object} InstallationRecord
+ * @property {number} id The installation ID.
+ * @property {Record<string, string>} [permissions] Granted repository
+ *   permissions (e.g. `contents: "write"`).
  *
  * @param {InstallLookupOptions} options
- * @returns {Promise<{ id: number }>} The installation record.
+ * @returns {Promise<InstallationRecord>} The installation record.
  */
 export async function resolveInstallation({
   appId,
@@ -108,7 +115,7 @@ export async function resolveInstallation({
       `could not resolve the App installation for ${owner}/${repo}: API returned ${installResponse.status}; is the App installed on the repository?`,
     );
   }
-  return /** @type {{ id: number }} */ (await installResponse.json());
+  return /** @type {InstallationRecord} */ (await installResponse.json());
 }
 
 /**
