@@ -12,6 +12,8 @@ import {
   win32Shell,
   msysPath,
   gpgHomeEnv,
+  tarPath,
+  tarIsGnu,
 } from "../src/lib/spawn.mjs";
 
 const node = process.execPath;
@@ -175,6 +177,18 @@ test("gpgHomeEnv normalizes GNUPGHOME on win32 at the subprocess boundary", () =
   const posix = { GNUPGHOME: "C:\\Users\\Ville\\gnupg" };
   assert.equal(gpgHomeEnv(posix, "linux"), posix);
   assert.equal(gpgHomeEnv(undefined, "win32"), undefined);
+});
+
+test("tarPath uses the resolved tar's path form on win32 only", () => {
+  const native = "C:\\Users\\x\\AppData\\Local\\Temp\\t.tgz";
+  if (process.platform === "win32") {
+    // The Git-bundled GNU tar gets the MSYS form; a native build keeps the
+    // native path. tarIsGnu resolves which one is on PATH.
+    assert.equal(tarPath(native), tarIsGnu() ? msysPath(native) : native);
+  } else {
+    assert.equal(tarPath(native), native);
+    assert.equal(tarPath("/tmp/t.tgz"), "/tmp/t.tgz");
+  }
 });
 
 test("runAsync resolves with captured output", async () => {

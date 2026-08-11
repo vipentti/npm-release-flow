@@ -23,7 +23,7 @@ import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { describeFailure } from "./lib/errors.mjs";
-import { msysPath, runSync } from "./lib/spawn.mjs";
+import { runSync, tarPath } from "./lib/spawn.mjs";
 import { CommandError } from "./lib/errors.mjs";
 import { mandatoryPrerequisiteProblem } from "./lib/control-files.mjs";
 import { parseStableVersion } from "./lib/versions.mjs";
@@ -314,9 +314,10 @@ export async function verify(options = {}) {
   try {
     runSync(
       "tar",
-      // The Git-bundled tar is an MSYS2 binary that misreads native Windows
-      // paths as cwd-relative; hand it the MSYS form on win32 only.
-      ["-xzf", msysPath(join(packDir, tarball)), "-C", msysPath(extractDir)],
+      // win32 tar is either the Git-bundled GNU tar (MSYS form) or the
+      // native bsdtar (native form); tarPath picks the form the resolved
+      // tar reads.
+      ["-xzf", tarPath(join(packDir, tarball)), "-C", tarPath(extractDir)],
       { cwd, env },
     );
     const packageDir = join(extractDir, "package");

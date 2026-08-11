@@ -56,6 +56,42 @@ export function msysPath(path, platform = process.platform) {
   return `/${match[1].toLowerCase()}/${match[2].replace(/\\/g, "/")}`;
 }
 
+/** @type {boolean | null} */
+let gnuTarResult = null;
+
+/**
+ * Whether the `tar` resolved on PATH is the Git-bundled GNU tar (an MSYS2
+ * binary) rather than a native build (Windows ships bsdtar at
+ * `System32\tar.exe`). Detected once per process from `tar --version`;
+ * GNU tar identifies as `tar (GNU tar) ...`, bsdtar as `bsdtar ...`.
+ *
+ * @returns {boolean}
+ */
+export function tarIsGnu() {
+  if (gnuTarResult !== null) return gnuTarResult;
+  try {
+    const result = runSync("tar", ["--version"]);
+    gnuTarResult = /GNU tar/.test(result.stdout + result.stderr);
+  } catch {
+    gnuTarResult = false;
+  }
+  return gnuTarResult;
+}
+
+/**
+ * The path form the resolved `tar` expects on win32: the MSYS2 form for the
+ * Git-bundled GNU tar, the native path for a native build (bsdtar reads
+ * native paths and misreads `/c/...` as drive-relative). No-op on POSIX,
+ * so CI (Linux) and the kit behavior are unchanged.
+ *
+ * @param {string} path
+ * @returns {string}
+ */
+export function tarPath(path) {
+  if (process.platform !== "win32") return path;
+  return tarIsGnu() ? msysPath(path) : path;
+}
+
 /**
  * Normalize the signing home for a child process on win32: git's own
  * `commit -S`/`tag -s` spawn gpg itself reading `GNUPGHOME` from the
