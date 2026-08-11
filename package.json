@@ -11,7 +11,11 @@
   "bin": {
     "npm-release-flow": "./bin/npm-release-flow.mjs"
   },
-  "files": ["bin", "src", ".github/workflows/release.yml"],
+  "files": [
+    "bin",
+    "src",
+    ".github/workflows/release.yml"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -24,6 +28,7 @@
     "knip": "knip",
     "format:check": "prettier --check package.json tsconfig.json eslint.config.mjs knip.json \".github/workflows/*.yml\" README.md RELEASE.md \"bin/**/*.mjs\" \"src/**/*.mjs\" \"test/**/*.mjs\"",
     "lint": "eslint \"bin/**/*.mjs\" \"src/**/*.mjs\" \"test/**/*.mjs\" eslint.config.mjs",
+    "test": "node --test",
     "typecheck": "tsc",
     "format": "prettier --write package.json tsconfig.json eslint.config.mjs knip.json \".github/workflows/*.yml\" README.md RELEASE.md \"bin/**/*.mjs\" \"src/**/*.mjs\" \"test/**/*.mjs\""
   },
