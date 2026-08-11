@@ -27,6 +27,7 @@ import { runSync, tarPath } from "./lib/spawn.mjs";
 import { CommandError } from "./lib/errors.mjs";
 import { mandatoryPrerequisiteProblem } from "./lib/control-files.mjs";
 import { parseStableVersion } from "./lib/versions.mjs";
+import { runAsScript } from "./lib/run-script.mjs";
 import {
   packContractProblems,
   binEntryProblems,
@@ -402,3 +403,5 @@ export async function verify(options = {}) {
   }
   return 0;
 }
+
+runAsScript(import.meta.url, verify);

@@ -9,6 +9,7 @@
 
 import { describeFailure } from "./lib/errors.mjs";
 import { git } from "./lib/repo-state.mjs";
+import { runAsScript } from "./lib/run-script.mjs";
 
 const RELEASE_FILES = ["CHANGELOG.md", "package.json", "package-lock.json"];
 
@@ -104,3 +105,5 @@ export async function revalidate(options = {}) {
 
   return 0;
 }
+
+runAsScript(import.meta.url, revalidate);

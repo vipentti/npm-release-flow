@@ -430,7 +430,7 @@ test("prepare exits 1 for a conflicting remote branch only", async () => {
 test("prepare exits 1 for a conflicting tag (local and remote)", async () => {
   const { fixture, env } = signingFixture();
   try {
-    git(["tag", "v1.2.3"], { cwd: fixture.consumer });
+    git(["tag", "v1.2.3"], { cwd: fixture.consumer, env });
     const localErr = await expectCliError(
       prepare(
         { version: "1.2.3", execute: false },

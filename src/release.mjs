@@ -30,6 +30,7 @@ import { parseStableVersion } from "./lib/versions.mjs";
 import { releaseNotes } from "./lib/changelog.mjs";
 import { integrityOfFile } from "./lib/pack-contract.mjs";
 import { verifyTagObject } from "./lib/tag-verify.mjs";
+import { runAsScript } from "./lib/run-script.mjs";
 
 const NPM_REGISTRY = "https://registry.npmjs.org";
 const shaPattern = /^[0-9a-f]{40}$/;
@@ -694,3 +695,5 @@ export async function release(options = {}) {
     return 1;
   }
 }
+
+runAsScript(import.meta.url, release);
