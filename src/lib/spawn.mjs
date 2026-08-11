@@ -52,6 +52,26 @@ export function msysPath(path, platform = process.platform) {
 }
 
 /**
+ * Normalize the signing home for a child process on win32: git's own
+ * `commit -S`/`tag -s` spawn gpg itself reading `GNUPGHOME` from the
+ * environment, and the Git-bundled gpg misreads a native drive-letter path
+ * as cwd-relative. So the MSYS form is handed to any subprocess that may
+ * sign, at the product boundary (callers and fixtures keep the native
+ * value). No-op on POSIX and when `GNUPGHOME` is unset or already in MSYS
+ * form, so CI and non-signing behavior are unchanged.
+ *
+ * @param {NodeJS.ProcessEnv | undefined} env
+ * @param {NodeJS.Platform} [platform]
+ * @returns {NodeJS.ProcessEnv | undefined}
+ */
+export function gpgHomeEnv(env, platform = process.platform) {
+  if (platform !== "win32" || env === undefined || !env.GNUPGHOME) return env;
+  const converted = msysPath(env.GNUPGHOME, platform);
+  if (converted === env.GNUPGHOME) return env;
+  return { ...env, GNUPGHOME: converted };
+}
+
+/**
  * Quote a single argument for cmd.exe: wrap in double quotes when it is empty
  * or contains whitespace or a cmd metacharacter (`&|<>()^"` separators, `,;=`
  * argument separators, `%!` variable syntax), doubling embedded quotes. `%`

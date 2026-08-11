@@ -829,10 +829,11 @@ let sharedSigningHome = null;
 function createSharedSigningHome() {
   if (sharedSigningHome === null) {
     const home = mkdtempSync(join(tmpdir(), "npmrf-gnupg-"));
-    // The Git-bundled gpg is an MSYS2 binary that misreads a native Windows
-    // path as cwd-relative (`gpg: keyblock resource '<cwd>/C:\...'`); hand it
-    // the MSYS form on win32 only, and expose that form as the GNUPGHOME the
-    // tests spread into child envs (git commit -S inherits it unchanged).
+    // The home stays native: the tests spread it into child envs exactly as
+    // a Windows caller would, and the product boundary (git() and
+    // gpgHomeArgs) normalizes it to the MSYS form for the Git-bundled gpg.
+    // Only these direct fixture gpg calls convert, because they bypass the
+    // kit's subprocess boundary.
     const gpgHome = msysPath(home);
     const params = [
       "%no-protection",
@@ -861,7 +862,7 @@ function createSharedSigningHome() {
       ?.split(":")[9];
     if (!fpr)
       throw new Error("could not determine the fixture GPG fingerprint");
-    sharedSigningHome = { home: gpgHome, fingerprint: fpr };
+    sharedSigningHome = { home, fingerprint: fpr };
     process.on("exit", () => {
       rmSync(home, { recursive: true, force: true });
     });
@@ -895,7 +896,7 @@ export function gpgFixtureUsable() {
     // The env-var path is what git commit -S uses; if gpg ignores it, the
     // fixture key is not signable and the execute tests cannot run.
     runSync("gpg", ["--batch", "--list-secret-keys", fingerprint], {
-      env: { ...process.env, GNUPGHOME: home },
+      env: { ...process.env, GNUPGHOME: msysPath(home) },
     });
     gpgFixtureUsableResult = true;
   } catch {

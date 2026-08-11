@@ -111,8 +111,10 @@ Follow this order exactly:
 2. In an **ordinary PR**, remove `"private": true` while the version stays
    `0.0.0`, and merge it. It cannot be removed inside the release PR: that
    would change a fourth file and invalidate the release diff.
-3. From that `0.0.0` main, run
-   `npm-release-flow prepare --version <first>` (for example `1.0.0`). The
+3. From that `0.0.0` main, run (from a checkout, as the package is not
+   published yet)
+   `node bin/npm-release-flow.mjs prepare --version <first>` (for example
+   `1.0.0`). The
    release PR body marker stays `Kit: @vipentti/npm-release-flow@0.0.0`
    because the prepared kit checkout is still the pinned `0.0.0` commit,
    which matches the caller pin.

@@ -5,7 +5,7 @@
  * refuse with the same messages.
  */
 
-import { runSync } from "./spawn.mjs";
+import { msysPath, runSync } from "./spawn.mjs";
 import { CliError, CommandError, describeFailure } from "./errors.mjs";
 import { configuredSigningKey, gpgProgram, git } from "./repo-state.mjs";
 
@@ -31,7 +31,10 @@ const fingerprintPattern = /^[0-9a-fA-F]{40}$/;
  */
 function gpgHomeArgs(env) {
   if (env.GNUPGHOME) {
-    return ["--homedir", env.GNUPGHOME];
+    // Product boundary for the kit's own gpg calls: the Git-bundled gpg on
+    // win32 misreads a native drive-letter path as cwd-relative, so the
+    // MSYS form is passed here (no-op on POSIX). Callers keep native paths.
+    return ["--homedir", msysPath(env.GNUPGHOME)];
   }
   return [];
 }

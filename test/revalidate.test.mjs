@@ -124,11 +124,13 @@ test("revalidate fails on a missing GITHUB_SHA", async () => {
   const { fixture, env } = revalidateFixture();
   try {
     const problems = [];
+    // Hermetic: a CI host exports GITHUB_SHA, which the fixture would
+    // otherwise inherit and turn this into a different failure path.
+    const missingShaEnv = { ...env };
+    delete missingShaEnv.GITHUB_SHA;
     const code = await revalidate({
       cwd: fixture.consumer,
-      // Hermetic: a CI host exports GITHUB_SHA, which the fixture would
-      // otherwise inherit and turn this into a different failure path.
-      env: { ...env, GITHUB_SHA: "" },
+      env: missingShaEnv,
       log: (line) => problems.push(line),
     });
     assert.equal(code, 1);
