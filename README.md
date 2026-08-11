@@ -177,9 +177,17 @@ npm test            # node --test (real git/gpg fixtures)
 npm run release:verify  # all of the above, in order
 ```
 
-The CI workflow runs the same suite in a single `ci` job and actionlint-lints
-every workflow file. See [RELEASE.md](RELEASE.md) for the release checklist
-and the exact human sequences (going public, first npm release).
+The CI workflow runs the same suite in a single `ci` job on Linux and
+Windows and actionlint-lints every workflow file. See
+[RELEASE.md](RELEASE.md) for the release checklist and the exact human
+sequences (going public, first npm release).
+
+On Windows, the kit's signing and pack-extraction paths assume the
+Git for Windows / MSYS2 toolchain (the default when Git for Windows is on
+PATH): the Git-bundled `gpg` and `tar` receive paths in MSYS form, which
+those binaries require. A user who configures `gpg.program` to a native
+(non-MSYS) gpg, or has a native bsdtar first on PATH, would need native
+paths; that configuration is not supported by the Windows path handling.
 
 ## License
 

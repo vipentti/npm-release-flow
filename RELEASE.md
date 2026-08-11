@@ -20,8 +20,8 @@ to it.
 - Self-release caller `.github/workflows/self-release.yml`: pushes to `main`
   only, pinned to the full commit SHA `764e09cf642997b736663e1711e69bbb6d71a43e`
   (the kit at version `0.0.0`). This is the pre-first-release pin; it must
-  advance to the merge commit of this release-bootstrap PR before the first
-  release (see bootstrap below).
+  advance to the actual squash-merge commit of this release-bootstrap PR on
+  `main` before the first release (see bootstrap below).
 - CI `.github/workflows/ci.yml`: the full local suite in a single `ci` job,
   plus actionlint on every workflow file.
 - Rulesets (active): `main` (no deletion, no non-fast-forward, required
@@ -94,14 +94,21 @@ Environment approval.
 
 ## Before making the repository public
 
-In order:
+Merge this release-bootstrap PR while the repository is still private, and
+only then change visibility. In order:
 
-1. Complete the pre-public checks from this plan's verification:
+1. Merge this PR (`public-release-bootstrap`) while the repository is still
+   private. Going public first would expose the old README, no SECURITY.md,
+   the old CI, and no self-release caller for some interval: this PR is the
+   public-readiness work, so it must land on `main` before the visibility
+   change.
+2. Confirm the resulting `main` CI (the `ci` check) is green.
+3. Run/confirm the final pre-public checks against that resulting `main`:
    `npm run release:verify`, actionlint on all workflow files,
    `npm pack --dry-run` inspection, and the gitleaks history scan (a full
    local clone; if the scan could not run, run it before the visibility
    change).
-2. Make the repository public (Settings, Danger Zone). This is what unlocks
+4. Make the repository public (Settings, Danger Zone). This is what unlocks
    the `required_reviewers` Environment rule.
 
 ## First npm release (exact bootstrap order)
@@ -116,13 +123,20 @@ permits exactly `CHANGELOG.md`, `package.json`, and `package-lock.json` in a
 release PR, so the control-file changes below live in ordinary PRs. Follow
 this order exactly:
 
-1. Complete the pre-public checks and make the repository public (above),
-   then merge this release-bootstrap PR.
-2. In an **ordinary PR**, advance the caller pin to this PR's merge commit
-   and remove `"private": true`, keeping the version `0.0.0`: update
-   `.github/workflows/self-release.yml` and the README caller example to the
-   resulting `main` SHA (full 40-character SHA), and drop `"private": true`
-   from `package.json`. Merge it. The pin advance is required before the
+1. Merge this release-bootstrap PR, confirm the resulting `main` CI is
+   green, and run/confirm the final pre-public checks against that `main`,
+   all while the repository is still private; then make the repository
+   public (above).
+2. In an **ordinary PR**, advance the caller pin to this PR's **actual
+   squash-merge commit on `main`** and remove `"private": true`, keeping the
+   version `0.0.0`: update `.github/workflows/self-release.yml` and the
+   README caller example to that commit's SHA (full 40-character SHA), and
+   drop `"private": true` from `package.json`. The pin is the commit that
+   lands on `main` after the squash merge, not the PR head (`ba23fe3...`)
+   and not GitHub's pre-merge synthetic merge SHA. Until that SHA exists,
+   the self-release caller correctly remains pinned to the old known commit
+   `764e09cf642997b736663e1711e69bbb6d71a43e`. Merge it. The pin advance
+   is required before the
    first release: the called workflow checks out the kit at the pin, and the
    skew guard compares only the semantic version, so a stale pin would run
    the pre-merge kit source while passing the guard as equivalent
@@ -130,10 +144,20 @@ this order exactly:
    release PR: that would change a fourth file and invalidate the release
    diff.
 3. Manually publish `0.0.0` as a bootstrap-tagged package (the registry
-   prerequisite): from the merged checkout, `npm publish --tag bootstrap`
-   with an npm auth token. The workflow never verifies or publishes `0.0.0`
-   (the first automated release is a higher version), so no `gitHead`
-   handling is needed; deprecate it later if desired:
+   prerequisite) with an npm auth token, explicitly public and pinned to
+   npmjs.org:
+
+   ```sh
+   npm publish --tag bootstrap --access public --registry https://registry.npmjs.org
+   ```
+
+   The package is scoped (`@vipentti/npm-release-flow`), so an initial
+   public scoped publish must pass `--access public`; and `--registry`
+   pins npmjs.org so a scope-level registry redirect cannot route the
+   first publication elsewhere (the automated release pins the same
+   registry). The workflow never verifies or publishes `0.0.0` (the first
+   automated release is a higher version), so no `gitHead` handling is
+   needed; deprecate it later if desired:
 
    ```sh
    npm deprecate @vipentti/npm-release-flow@0.0.0 "bootstrap version"

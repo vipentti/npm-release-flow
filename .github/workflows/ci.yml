@@ -10,10 +10,28 @@ permissions:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
+
+      # The Windows signing tests need a real MSYS gpg; Git for Windows
+      # ships it in usr/bin. Ensure it is on PATH so the execute-with-
+      # signing tests run on the Windows runner too (gpgFixtureUsable
+      # skips them when it is not resolvable).
+      - name: Add Git's MSYS gpg to PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v gpg >/dev/null 2>&1; then
+            echo "gpg already on PATH: $(command -v gpg)"
+          else
+            echo "C:/Program Files/Git/usr/bin" >> "$GITHUB_PATH"
+          fi
 
       - name: Set up Node 24
         uses: actions/setup-node@v4
@@ -39,7 +57,10 @@ jobs:
       - name: Test
         run: npm test
 
+      # actionlint lints the same workflow YAML on every runner; running it
+      # once (Linux, where the pinned linux binary is downloaded) suffices.
       - name: Install actionlint (pinned v1.7.12)
+        if: runner.os == 'Linux'
         run: |
           curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar -xz actionlint
           chmod +x actionlint
@@ -48,6 +69,7 @@ jobs:
       # targeted `queue` ignore is required by the caller's
       # `concurrency.queue: max`, which actionlint v1.7.12 predates.
       - name: Lint workflows
+        if: runner.os == 'Linux'
         run: ./actionlint -ignore 'property "workflow_repository" is not defined' -ignore 'property "workflow_sha" is not defined' -ignore 'unexpected key "queue" for "concurrency" section' .github/workflows/*.yml
 
       - name: Pack and CLI smoke test
