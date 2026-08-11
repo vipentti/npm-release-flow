@@ -63,8 +63,19 @@ jobs:
         if: runner.os == 'Linux'
         run: npm run knip
 
+      # Windows runners are 2-core, so node --test's default concurrency is
+      # 1 and the subprocess-heavy integration tests run serially. The tests
+      # spend most of their time waiting on git/gpg/npm children, so more
+      # file-level concurrency overlaps that wait on the Windows leg.
       - name: Test
-        run: npm test
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            npm test -- --test-concurrency=4
+          else
+            npm test
+          fi
 
       # actionlint lints the same workflow YAML on every runner; running it
       # once (Linux, where the pinned linux binary is downloaded) suffices.
