@@ -45,6 +45,73 @@ export function createAppJwt({ appId, privateKey, now }) {
 }
 
 /**
+ * App-authenticated request headers (a signed App JWT; user access tokens
+ * cannot authenticate the App-only installation endpoint).
+ *
+ * @param {string} appId
+ * @param {string} privateKey
+ * @returns {Record<string, string>}
+ */
+function appHeaders(appId, privateKey) {
+  return {
+    Authorization: `Bearer ${createAppJwt({ appId, privateKey })}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+}
+
+/**
+ * @typedef {object} InstallLookupOptions
+ * @property {string} appId The GitHub App ID.
+ * @property {string} privateKey The App's PEM private key.
+ * @property {string} owner Repository owner.
+ * @property {string} repo Repository name.
+ * @property {typeof fetch} [fetchImpl] Fetch implementation (stubbed in
+ *   tests); defaults to the global fetch.
+ * @property {string} [apiUrl] API base URL (defaults to api.github.com).
+ */
+
+/**
+ * Resolve the App installation for a repository with App-JWT
+ * authentication. `GET /repos/{owner}/{repo}/installation` is documented
+ * as App-JWT-only: user access tokens, installation access tokens, and
+ * fine-grained PATs cannot read it. Shared by `mintAppToken` (the token
+ * exchange) and the `check` command's installation readiness probe.
+ *
+ * @param {InstallLookupOptions} options
+ * @returns {Promise<{ id: number }>} The installation record.
+ */
+export async function resolveInstallation({
+  appId,
+  privateKey,
+  owner,
+  repo,
+  fetchImpl,
+  apiUrl = "https://api.github.com",
+}) {
+  const doFetch = fetchImpl ?? globalThis.fetch;
+  const headers = appHeaders(appId, privateKey);
+  let installResponse;
+  try {
+    installResponse = await doFetch(
+      `${apiUrl}/repos/${owner}/${repo}/installation`,
+      { headers },
+    );
+  } catch (err) {
+    throw new Error(
+      `could not resolve the App installation for ${owner}/${repo}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
+  if (!installResponse.ok) {
+    throw new Error(
+      `could not resolve the App installation for ${owner}/${repo}: API returned ${installResponse.status}; is the App installed on the repository?`,
+    );
+  }
+  return /** @type {{ id: number }} */ (await installResponse.json());
+}
+
+/**
  * @typedef {object} MintOptions
  * @property {string} appId The GitHub App ID (from the repository variable).
  * @property {string} privateKey The App's PEM private key.
@@ -70,33 +137,15 @@ export async function mintAppToken({
   apiUrl = "https://api.github.com",
 }) {
   const doFetch = fetchImpl ?? globalThis.fetch;
-  const jwt = createAppJwt({ appId, privateKey });
-  const headers = {
-    Authorization: `Bearer ${jwt}`,
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-
-  let installResponse;
-  try {
-    installResponse = await doFetch(
-      `${apiUrl}/repos/${owner}/${repo}/installation`,
-      { headers },
-    );
-  } catch (err) {
-    throw new Error(
-      `could not resolve the App installation for ${owner}/${repo}: ${err instanceof Error ? err.message : String(err)}`,
-      { cause: err },
-    );
-  }
-  if (!installResponse.ok) {
-    throw new Error(
-      `could not resolve the App installation for ${owner}/${repo}: API returned ${installResponse.status}; is the App installed on the repository?`,
-    );
-  }
-  const installation = /** @type {{ id: number }} */ (
-    await installResponse.json()
-  );
+  const installation = await resolveInstallation({
+    appId,
+    privateKey,
+    owner,
+    repo,
+    fetchImpl,
+    apiUrl,
+  });
+  const headers = appHeaders(appId, privateKey);
 
   let tokenResponse;
   try {

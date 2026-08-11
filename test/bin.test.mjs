@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
+import { generateKeyPairSync } from "node:crypto";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+// The App-installation probe signs a real App JWT, so the fixture must carry
+// a real (throwaway) RSA private key rather than a placeholder string.
+const APP_PRIVATE_KEY = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
+}).privateKey;
 
 import { main } from "../bin/npm-release-flow.mjs";
 import { ExitCode } from "../src/lib/errors.mjs";
@@ -66,13 +76,12 @@ function goodCheckFixture() {
       name: "release",
       protection_rules: [{ id: 1, type: "required_reviewers", reviewers: [] }],
     },
-    installationId: 9876,
   });
   const env = {
     ...envWithShim(fixture),
     GNUPGHOME: signing.home,
     NPM_RELEASE_FLOW_GPG_FINGERPRINT: signing.fingerprint,
-    NPM_RELEASE_FLOW_APP_PRIVATE_KEY: "fixture-pem",
+    NPM_RELEASE_FLOW_APP_PRIVATE_KEY: APP_PRIVATE_KEY,
   };
   return { fixture, env };
 }
@@ -167,7 +176,26 @@ test("bin: prepare without --version exits 1 with usage", () => {
 test("bin: check exits 0 in a fully configured fixture", () => {
   const { fixture, env } = goodCheckFixture();
   try {
-    const result = runBin(["check"], { cwd: fixture.consumer, env });
+    // The App-installation probe runs in the subprocess with a real fetch;
+    // preload a stub so it resolves without network access.
+    const preload = join(fixture.base, "fetch-preload.mjs");
+    writeFileSync(
+      preload,
+      [
+        "globalThis.fetch = async (url) => {",
+        "  const u = String(url);",
+        '  if (u.endsWith("/installation")) return { ok: true, status: 200, json: async () => ({ id: 9876 }) };',
+        "  return { ok: false, status: 404, json: async () => ({}) };",
+        "};",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const result = runSync(
+      process.execPath,
+      ["--import", pathToFileURL(preload).href, binPath, "check"],
+      { cwd: fixture.consumer, env },
+    );
     assert.equal(result.status, 0);
     assert.match(result.stderr, /All release prerequisites pass\./);
   } finally {

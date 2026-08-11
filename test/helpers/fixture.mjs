@@ -132,7 +132,13 @@ if (argv[0] === "pr" && argv[1] === "create") {
   process.exit(0);
 }
 if (argv[0] === "repo" && argv[1] === "view") {
-  console.log(JSON.stringify({ nameWithOwner: state.repo ?? "example/fixture-consumer" }));
+  const nameWithOwner = state.repo ?? "example/fixture-consumer";
+  const jqIndex = argv.indexOf("--jq");
+  if (jqIndex !== -1 && argv[jqIndex + 1] === ".nameWithOwner") {
+    console.log(nameWithOwner);
+  } else {
+    console.log(JSON.stringify({ nameWithOwner }));
+  }
   process.exit(0);
 }
 if (argv[0] === "auth" && argv[1] === "status") {
@@ -145,40 +151,46 @@ if (argv[0] === "auth" && argv[1] === "status") {
 }
 if (argv[0] === "api") {
   const url = argv[1];
-  if (url.endsWith("/actions/secrets")) {
-    console.log(JSON.stringify({ secrets: (state.secrets ?? []).map((name) => ({ name })) }));
-    process.exit(0);
-  }
-  if (url.endsWith("/actions/variables")) {
-    console.log(JSON.stringify({ variables: (state.variables ?? []).map((name) => ({ name })) }));
-    process.exit(0);
-  }
-  if (url.endsWith("/actions/variables/NPM_RELEASE_FLOW_APP_ID")) {
-    if (typeof state.appId === "string" && state.appId !== "") {
-      console.log(JSON.stringify({ value: state.appId }));
+  const secretMatch = /^repos\\/[^/]+\\/[^/]+\\/actions\\/secrets\\/([^/]+)$/.exec(url);
+  if (secretMatch) {
+    const name = secretMatch[1];
+    if ((state.secrets ?? []).includes(name)) {
+      console.log(JSON.stringify({ name }));
       process.exit(0);
     }
-    console.error("gh-fixture: variable not found");
+    // Mirror gh api's 404 shape: exit 1 with the HTTP status on stderr.
+    console.error("gh-fixture: HTTP 404: Not Found (https://api.github.com/" + url + ")");
+    process.exit(1);
+  }
+  const variableMatch = /^repos\\/[^/]+\\/[^/]+\\/actions\\/variables\\/([^/]+)$/.exec(url);
+  if (variableMatch) {
+    const name = variableMatch[1];
+    if (name === "NPM_RELEASE_FLOW_APP_ID") {
+      if (typeof state.appId === "string" && state.appId !== "") {
+        const jqIndex = argv.indexOf("--jq");
+        if (jqIndex !== -1 && argv[jqIndex + 1] === ".value") {
+          console.log(state.appId);
+        } else {
+          console.log(JSON.stringify({ value: state.appId }));
+        }
+        process.exit(0);
+      }
+      console.error("gh-fixture: HTTP 404: Not Found (https://api.github.com/" + url + ")");
+      process.exit(1);
+    }
+    if ((state.variables ?? []).includes(name)) {
+      console.log(JSON.stringify({ name }));
+      process.exit(0);
+    }
+    console.error("gh-fixture: HTTP 404: Not Found (https://api.github.com/" + url + ")");
     process.exit(1);
   }
   if (url.endsWith("/environments/release")) {
-    if (state.environmentRelease !== undefined) {
+    if (state.environmentRelease !== undefined && state.environmentRelease !== null) {
       console.log(JSON.stringify(state.environmentRelease));
       process.exit(0);
     }
-    console.error("gh-fixture: environment not found");
-    process.exit(1);
-  }
-  if (url.endsWith("/environments")) {
-    console.log(JSON.stringify({ environments: (state.environments ?? []).map((name) => ({ name })) }));
-    process.exit(0);
-  }
-  if (url.endsWith("/installation")) {
-    if (typeof state.installationId === "number") {
-      console.log(JSON.stringify({ id: state.installationId }));
-      process.exit(0);
-    }
-    console.error("gh-fixture: installation not found");
+    console.error("gh-fixture: HTTP 404: Not Found (https://api.github.com/" + url + ")");
     process.exit(1);
   }
   const pullsMatch = /^repos\\/[^/]+\\/[^/]+\\/pulls\\/([0-9]+)$/.exec(url);
@@ -522,7 +534,7 @@ export function setGhPrCreateUrl(fixture, url) {
  * Script the shim's repository identity and App-ID variable.
  *
  * @param {Fixture} fixture
- * @param {{ repo?: string, appId?: string, secrets?: string[], variables?: string[], environments?: string[], environmentRelease?: Record<string, any> | null, installationId?: number | null, authOk?: boolean, prBodies?: Record<string, string>, commitPulls?: Record<string, Array<{ number: number, state: string, base: string, head: string, body?: string | null }>>, releases?: Record<string, boolean>, tagVerification?: string }} values
+ * @param {{ repo?: string, appId?: string, secrets?: string[], variables?: string[], environments?: string[], environmentRelease?: Record<string, any> | null, authOk?: boolean, prBodies?: Record<string, string>, commitPulls?: Record<string, Array<{ number: number, state: string, base: string, head: string, body?: string | null }>>, releases?: Record<string, boolean>, tagVerification?: string }} values
  */
 export function setGhRepoState(fixture, values) {
   const state = JSON.parse(readFileSync(fixture.ghState, "utf8"));

@@ -1,7 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+
+// The App-token minting signs a real App JWT, so the fixture must carry a
+// real (throwaway) RSA private key rather than a placeholder string.
+const APP_PRIVATE_KEY = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
+}).privateKey;
 
 import { tag } from "../src/commands/tag.mjs";
 import { CliError, ExitCode } from "../src/lib/errors.mjs";
@@ -69,7 +77,7 @@ function tagFixture({ version = "1.2.3", prNumber = 12, merge = true } = {}) {
 function withAppMaterial(
   fixture,
   env,
-  { appId = "12345", privateKey = "fixture-pem" } = {},
+  { appId = "12345", privateKey = APP_PRIVATE_KEY } = {},
 ) {
   setGhRepoState(fixture, { repo: "example/fixture-consumer", appId });
   return {

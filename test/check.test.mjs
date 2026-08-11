@@ -1,7 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+
+// The App-installation probe signs a real App JWT, so the fixture must carry
+// a real (throwaway) RSA private key rather than a placeholder string.
+const APP_PRIVATE_KEY = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
+}).privateKey;
 
 import { check } from "../src/commands/check.mjs";
 import { git } from "../src/lib/repo-state.mjs";
@@ -9,9 +17,43 @@ import {
   createFixtureRepo,
   createSigningHome,
   envWithShim,
+  ghCalls,
   setGhRepoState,
   setRepoSigningKey,
 } from "./helpers/fixture.mjs";
+
+/**
+ * The App-installation lookup `check` performs is App-JWT authenticated
+ * (never the shimmed gh token), so tests stub globalThis.fetch. The shimmed
+ * gh must never answer the App-only endpoint.
+ */
+let installationInstalled = true;
+/** @type {(() => void) | null} */
+let restoreInstallationStub = null;
+function stubInstallation() {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.endsWith("/installation")) {
+      if (installationInstalled) {
+        return { ok: true, status: 200, json: async () => ({ id: 9876 }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+test.beforeEach(() => {
+  installationInstalled = true;
+  restoreInstallationStub = stubInstallation();
+});
+test.afterEach(() => {
+  restoreInstallationStub?.();
+  restoreInstallationStub = null;
+});
 
 const ALL_SECRETS = [
   "NPM_RELEASE_FLOW_GPG_PRIVATE_KEY",
@@ -44,13 +86,12 @@ function goodCheckFixture() {
       name: "release",
       protection_rules: [{ id: 1, type: "required_reviewers", reviewers: [] }],
     },
-    installationId: 9876,
   });
   const env = {
     ...envWithShim(fixture),
     GNUPGHOME: signing.home,
     NPM_RELEASE_FLOW_GPG_FINGERPRINT: signing.fingerprint,
-    NPM_RELEASE_FLOW_APP_PRIVATE_KEY: "fixture-pem",
+    NPM_RELEASE_FLOW_APP_PRIVATE_KEY: APP_PRIVATE_KEY,
   };
   return { fixture, env, signing };
 }
@@ -70,6 +111,45 @@ test("check passes when every prerequisite is in place", async () => {
   const ctx = goodCheckFixture();
   try {
     assert.equal(await run(ctx), 0);
+    // Every required secret and variable was probed by its exact resource
+    // endpoint; no collection listing was used.
+    const calls = ghCalls(ctx.fixture);
+    for (const name of ALL_SECRETS) {
+      assert.ok(
+        calls.some(
+          (call) =>
+            call[0] === "api" &&
+            call[1] ===
+              `repos/example/fixture-consumer/actions/secrets/${name}`,
+        ),
+        `secret ${name} probed by exact endpoint`,
+      );
+    }
+    for (const name of ALL_VARIABLES) {
+      const expected =
+        name === "NPM_RELEASE_FLOW_APP_ID"
+          ? [
+              "api",
+              `repos/example/fixture-consumer/actions/variables/${name}`,
+              "--jq",
+              ".value",
+            ]
+          : ["api", `repos/example/fixture-consumer/actions/variables/${name}`];
+      assert.ok(
+        calls.some((call) => call.join(" ") === expected.join(" ")),
+        `variable ${name} probed by exact endpoint`,
+      );
+    }
+    assert.ok(
+      calls.every(
+        (call) =>
+          !(call[1] ?? "").endsWith("/actions/secrets") &&
+          !(call[1] ?? "").endsWith("/actions/variables") &&
+          !(call[1] ?? "").endsWith("/environments") &&
+          !(call[1] ?? "").endsWith("/installation"),
+      ),
+      "no collection or App-only endpoint is queried through gh",
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -253,7 +333,7 @@ test("check flags missing variables by name", async () => {
 test("check flags a missing release Environment", async () => {
   const ctx = goodCheckFixture();
   try {
-    setGhRepoState(ctx.fixture, { environments: [] });
+    setGhRepoState(ctx.fixture, { environmentRelease: null });
     const problems = [];
     const code = await check(
       { execute: false },
@@ -303,7 +383,7 @@ test("check flags a release Environment without required-reviewer protection", a
 test("check flags a missing App installation", async () => {
   const ctx = goodCheckFixture();
   try {
-    setGhRepoState(ctx.fixture, { installationId: null });
+    installationInstalled = false;
     const problems = [];
     const code = await check(
       { execute: false },
@@ -399,13 +479,12 @@ test("check flags a missing commit-signing key", async () => {
       name: "release",
       protection_rules: [{ id: 1, type: "required_reviewers", reviewers: [] }],
     },
-    installationId: 9876,
   });
   const env = {
     ...envWithShim(fixture),
     GNUPGHOME: signing.home,
     NPM_RELEASE_FLOW_GPG_FINGERPRINT: signing.fingerprint,
-    NPM_RELEASE_FLOW_APP_PRIVATE_KEY: "fixture-pem",
+    NPM_RELEASE_FLOW_APP_PRIVATE_KEY: APP_PRIVATE_KEY,
   };
   try {
     const problems = [];
@@ -440,12 +519,11 @@ test("check flags a missing NPM_RELEASE_FLOW_GPG_FINGERPRINT and its key", async
       name: "release",
       protection_rules: [{ id: 1, type: "required_reviewers", reviewers: [] }],
     },
-    installationId: 9876,
   });
   const env = {
     ...envWithShim(fixture),
     GNUPGHOME: signing.home,
-    NPM_RELEASE_FLOW_APP_PRIVATE_KEY: "fixture-pem",
+    NPM_RELEASE_FLOW_APP_PRIVATE_KEY: APP_PRIVATE_KEY,
   };
   try {
     const problems = [];

@@ -23,6 +23,7 @@ import {
   commitSigningState,
   fingerprintSigningState,
 } from "../lib/tag-verify.mjs";
+import { resolveInstallation } from "../lib/app-token.mjs";
 
 /**
  * Secrets the release workflow requires (names only).
@@ -91,20 +92,17 @@ function tryReadJson(cwd, name) {
 }
 
 /**
- * Run `gh api` for the current repository and return the parsed JSON, or
- * null when the call fails.
+ * Whether a gh api failure means the resource is absent. `gh api` exits 1
+ * for every HTTP error; a 404 is recognizable from gh's stderr (and from a
+ * numeric exit status when a direct probe is used).
  *
- * @param {string} endpoint
- * @param {{ cwd: string, env: NodeJS.ProcessEnv }} ctx
- * @returns {Record<string, any> | null}
+ * @param {unknown} err
+ * @returns {boolean}
  */
-function ghApi(endpoint, ctx) {
-  try {
-    const result = gh(["api", endpoint], ctx);
-    return JSON.parse(result.stdout);
-  } catch {
-    return null;
-  }
+function isNotFound(err) {
+  if (!(err instanceof CommandError)) return false;
+  if (err.status === 404) return true;
+  return /(?:^|\D)404(?:\D|$)/.test(err.stderr);
 }
 
 /**
@@ -223,86 +221,100 @@ export async function check(args, options = {}) {
     );
   }
 
+  const appPrivateKey = env.NPM_RELEASE_FLOW_APP_PRIVATE_KEY ?? "";
+
   if (nameWithOwner !== null) {
-    const secrets = ghApi(`repos/${nameWithOwner}/actions/secrets`, ctx);
-    if (secrets === null) {
-      problems.push(
-        describeFailure({
-          checked: `the actions secrets of ${nameWithOwner}`,
-          found: "the secrets list could not be read",
-          correction: "check gh permissions on the repository",
-        }),
-      );
-    } else {
-      const present = new Set(
-        /** @type {Array<{ name: string }>} */ (secrets.secrets ?? []).map(
-          (entry) => entry.name,
-        ),
-      );
-      for (const required of REQUIRED_SECRETS) {
-        if (!present.has(required)) {
+    // Secrets: each required secret by its exact resource endpoint (404 =
+    // not set; no collection listing, so pagination cannot hide an item).
+    for (const name of REQUIRED_SECRETS) {
+      try {
+        gh(["api", `repos/${nameWithOwner}/actions/secrets/${name}`], ctx);
+      } catch (err) {
+        if (isNotFound(err)) {
           problems.push(
             describeFailure({
-              checked: `the ${required} secret`,
+              checked: `the ${name} secret`,
               found: "it is not set on the repository",
               correction:
                 "set it as an Actions secret (values are never read by this command)",
             }),
           );
-        }
-      }
-    }
-
-    const variables = ghApi(`repos/${nameWithOwner}/actions/variables`, ctx);
-    if (variables === null) {
-      problems.push(
-        describeFailure({
-          checked: `the actions variables of ${nameWithOwner}`,
-          found: "the variables list could not be read",
-          correction: "check gh permissions on the repository",
-        }),
-      );
-    } else {
-      const present = new Set(
-        /** @type {Array<{ name: string }>} */ (variables.variables ?? []).map(
-          (entry) => entry.name,
-        ),
-      );
-      for (const required of REQUIRED_VARIABLES) {
-        if (!present.has(required)) {
+        } else {
           problems.push(
             describeFailure({
-              checked: `the ${required} variable`,
-              found: "it is not set on the repository",
-              correction:
-                "declare it as an Actions variable (values are never read by this command)",
+              checked: `the ${name} secret`,
+              found: "the secret could not be read",
+              correction: "check gh permissions on the repository",
             }),
           );
         }
       }
     }
 
-    const environments = ghApi(`repos/${nameWithOwner}/environments`, ctx);
-    const environmentNames = new Set(
-      /** @type {Array<{ name: string }>} */ (
-        environments?.environments ?? []
-      ).map((entry) => entry.name),
-    );
-    if (!environmentNames.has("release")) {
+    // Variables: each required variable by its exact resource endpoint. The
+    // App ID value is read (public) to authenticate the installation probe.
+    /** @type {string | null} */
+    let appId = null;
+    for (const name of REQUIRED_VARIABLES) {
+      try {
+        if (name === "NPM_RELEASE_FLOW_APP_ID") {
+          const result = gh(
+            [
+              "api",
+              `repos/${nameWithOwner}/actions/variables/${name}`,
+              "--jq",
+              ".value",
+            ],
+            ctx,
+          );
+          appId = result.stdout.trim();
+        } else {
+          gh(["api", `repos/${nameWithOwner}/actions/variables/${name}`], ctx);
+        }
+      } catch (err) {
+        if (isNotFound(err)) {
+          problems.push(
+            describeFailure({
+              checked: `the ${name} variable`,
+              found: "it is not set on the repository",
+              correction:
+                "declare it as an Actions variable (only the App ID value is read by this command)",
+            }),
+          );
+        } else {
+          problems.push(
+            describeFailure({
+              checked: `the ${name} variable`,
+              found: "the variable could not be read",
+              correction: "check gh permissions on the repository",
+            }),
+          );
+        }
+      }
+    }
+
+    // release Environment: direct resource query.
+    let releaseEnv = null;
+    try {
+      const result = gh(
+        ["api", `repos/${nameWithOwner}/environments/release`],
+        ctx,
+      );
+      releaseEnv = JSON.parse(result.stdout);
+    } catch (err) {
       problems.push(
         describeFailure({
           checked: "the release Environment",
-          found: "no Environment named release exists",
+          found: isNotFound(err)
+            ? "no Environment named release exists"
+            : "the Environment could not be read",
           correction: "create a release Environment with a required reviewer",
         }),
       );
-    } else {
-      const releaseEnv = ghApi(
-        `repos/${nameWithOwner}/environments/release`,
-        ctx,
-      );
+    }
+    if (releaseEnv !== null) {
       const rules = /** @type {Array<{ type?: string }>} */ (
-        releaseEnv?.protection_rules ?? []
+        releaseEnv.protection_rules ?? []
       );
       const hasReviewerGate = rules.some(
         (rule) =>
@@ -322,16 +334,36 @@ export async function check(args, options = {}) {
       }
     }
 
-    const installation = ghApi(`repos/${nameWithOwner}/installation`, ctx);
-    if (installation === null) {
-      problems.push(
-        describeFailure({
-          checked: `that the release GitHub App is installed on ${nameWithOwner}`,
-          found: "the App installation could not be resolved",
-          correction:
-            "install the release GitHub App on the repository with contents: write",
-        }),
-      );
+    // App installation: App-JWT authenticated lookup (the endpoint is
+    // documented as App-only; user tokens cannot read it). Skipped when the
+    // App ID variable or the private key is already reported missing.
+    const slashIndex = nameWithOwner.indexOf("/");
+    if (
+      appId !== null &&
+      appId !== "" &&
+      appPrivateKey !== "" &&
+      slashIndex > 0 &&
+      slashIndex < nameWithOwner.length - 1
+    ) {
+      const owner = nameWithOwner.slice(0, slashIndex);
+      const repo = nameWithOwner.slice(slashIndex + 1);
+      try {
+        await resolveInstallation({
+          appId,
+          privateKey: appPrivateKey,
+          owner,
+          repo,
+        });
+      } catch (err) {
+        problems.push(
+          describeFailure({
+            checked: `that the release GitHub App is installed on ${nameWithOwner}`,
+            found: err instanceof Error ? err.message : String(err),
+            correction:
+              "install the release GitHub App on the repository with contents: write",
+          }),
+        );
+      }
     }
   }
 
@@ -387,7 +419,6 @@ export async function check(args, options = {}) {
     problems.push(fingerprintSigning.message);
   }
 
-  const appPrivateKey = env.NPM_RELEASE_FLOW_APP_PRIVATE_KEY ?? "";
   if (appPrivateKey === "") {
     problems.push(
       describeFailure({

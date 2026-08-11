@@ -9,9 +9,17 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// The App-installation probe signs a real App JWT, so the fixture must carry
+// a real (throwaway) RSA private key rather than a placeholder string.
+const APP_PRIVATE_KEY = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
+}).privateKey;
 
 import { main } from "../bin/npm-release-flow.mjs";
 import { prepare } from "../src/commands/prepare.mjs";
@@ -176,6 +184,15 @@ test(
 
 test("e2e: bin exit codes 0/1/2 and error-content through the real CLI", async () => {
   const fixture = createFixtureRepo();
+  // The App-installation probe is App-JWT authenticated; stub the fetch so
+  // check passes without network access.
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith("/installation")) {
+      return { ok: true, status: 200, json: async () => ({ id: 9876 }) };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
   try {
     const signing = createSigningHome(fixture.base);
     git(["config", "user.signingkey", signing.fingerprint], {
@@ -193,13 +210,12 @@ test("e2e: bin exit codes 0/1/2 and error-content through the real CLI", async (
           { id: 1, type: "required_reviewers", reviewers: [] },
         ],
       },
-      installationId: 9876,
     });
     const env = {
       ...envWithShim(fixture),
       GNUPGHOME: signing.home,
       NPM_RELEASE_FLOW_GPG_FINGERPRINT: signing.fingerprint,
-      NPM_RELEASE_FLOW_APP_PRIVATE_KEY: "fixture-pem",
+      NPM_RELEASE_FLOW_APP_PRIVATE_KEY: APP_PRIVATE_KEY,
     };
 
     // check passes in the fully configured fixture (exit 0).
@@ -256,6 +272,7 @@ test("e2e: bin exit codes 0/1/2 and error-content through the real CLI", async (
     const unknown = await main(["frobnicate"], { cwd: fixture.consumer, env });
     assert.equal(unknown, 1);
   } finally {
+    globalThis.fetch = originalFetch;
     fixture.cleanup();
   }
 });

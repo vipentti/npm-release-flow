@@ -1,10 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, createVerify } from "node:crypto";
-import { createAppJwt, mintAppToken } from "../src/lib/app-token.mjs";
+import {
+  createAppJwt,
+  mintAppToken,
+  resolveInstallation,
+} from "../src/lib/app-token.mjs";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
 });
 
 test("createAppJwt produces a structurally valid RS256 JWT", () => {
@@ -68,6 +73,63 @@ function stubFetch({ installation = true, token = true } = {}) {
     globalThis.fetch = original;
   };
 }
+
+test("resolveInstallation authenticates with an App JWT and returns the installation", async () => {
+  let requestedUrl = null;
+  let authHeader = null;
+  const original = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    requestedUrl = String(url);
+    authHeader = options?.headers?.Authorization ?? null;
+    if (String(url).endsWith("/installation")) {
+      return { ok: true, status: 200, json: async () => ({ id: 9876 }) };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+  try {
+    const installation = await resolveInstallation({
+      appId: "12345",
+      privateKey,
+      owner: "example",
+      repo: "fixture-consumer",
+    });
+    assert.equal(installation.id, 9876);
+    assert.equal(
+      requestedUrl,
+      "https://api.github.com/repos/example/fixture-consumer/installation",
+    );
+    assert.ok(
+      typeof authHeader === "string" && authHeader.startsWith("Bearer "),
+      "the request carries an App JWT bearer header",
+    );
+    const jwt = /** @type {string} */ (authHeader).slice("Bearer ".length);
+    assert.equal(jwt.split(".").length, 3, "the bearer token is a JWT");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("resolveInstallation refuses when the installation is missing", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 404,
+    json: async () => ({}),
+  });
+  try {
+    await assert.rejects(
+      resolveInstallation({
+        appId: "12345",
+        privateKey,
+        owner: "example",
+        repo: "fixture-consumer",
+      }),
+      /API returned 404; is the App installed on the repository\?/,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
 
 test("mintAppToken resolves the installation and returns the token", async () => {
   const restore = stubFetch();
