@@ -454,20 +454,25 @@ test(
         remoteSha,
         localObjectSha("refs/tags/v1.2.3", { cwd: fixture.consumer }),
       );
-      // The push carried the App token in the extraheader.
+      // The push carried the App token in the extraheader as Basic x-access-token.
       const calls = gitCalls(recorder.callsFile);
       const push = calls.find((call) => call.includes("push"));
       assert.ok(push, "a git push was recorded");
-      const extraheaderIndex = push.indexOf(
-        "http.extraheader=Authorization: Bearer fixture-app-token",
-      );
+      const expected =
+        "http.extraheader=Authorization: Basic " +
+        Buffer.from("x-access-token:fixture-app-token").toString("base64");
+      const extraheaderIndex = push.indexOf(expected);
       assert.ok(
         extraheaderIndex !== -1,
-        "push carried the App token extraheader",
+        `push carried the Basic x-access-token extraheader (expected ${expected})`,
       );
       assert.ok(
         push.indexOf("-c") < extraheaderIndex,
         "-c precedes the extraheader",
+      );
+      assert.ok(
+        push.every((arg) => !arg.includes("Authorization: Bearer")),
+        "push must not use Bearer auth",
       );
     } finally {
       restore();
@@ -566,11 +571,16 @@ test(
         call.includes("push"),
       );
       assert.ok(push);
+      const expectedBasic =
+        "http.extraheader=Authorization: Basic " +
+        Buffer.from("x-access-token:fixture-app-token").toString("base64");
       assert.ok(
-        push.includes(
-          "http.extraheader=Authorization: Bearer fixture-app-token",
-        ),
-        "rerun push carried the App token extraheader",
+        push.includes(expectedBasic),
+        `rerun push carried the Basic x-access-token extraheader (expected ${expectedBasic})`,
+      );
+      assert.ok(
+        push.every((arg) => !arg.includes("Authorization: Bearer")),
+        "rerun push must not use Bearer auth",
       );
     } finally {
       restore();
