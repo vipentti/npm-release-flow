@@ -1,6 +1,6 @@
 {
   "name": "@vipentti/npm-release-flow",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "Reusable npm release toolkit: CLI plus reusable GitHub Actions release workflow",
   "type": "module",
   "main": "./src/index.mjs",
