@@ -14,8 +14,8 @@ Everything a reader needs is in this file.
   a protected `release` job. No inputs; four named, required secrets. See
   README.md for the caller contract.
 - Self-release caller `.github/workflows/self-release.yml`: pushes to `main`
-  only, pinned to the full commit SHA `95b5d29c4d035d2c3620d831d7f2a4ccf152d263`
-  (with the include-hidden-files fix, after revert #15). The pin advances
+  only, pinned to the full commit SHA `d0a4d0307806582463bf780b0b147a49bda6aad5`
+  (with the Basic-auth tag-push fix). The pin advances
   again, in an ordinary PR, after each release (see below).
 - CI `.github/workflows/ci.yml`: the full local suite in the `ci` job
   (Linux, the required status check) plus actionlint on every workflow
