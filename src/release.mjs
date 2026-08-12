@@ -107,7 +107,7 @@ export function createAndPushTag({
   git(
     [
       "-c",
-      `http.extraheader=Authorization: Bearer ${appToken}`,
+      `http.extraheader=Authorization: Basic ${Buffer.from(`x-access-token:${appToken}`).toString("base64")}`,
       "push",
       "origin",
       tagRef,
