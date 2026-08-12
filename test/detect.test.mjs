@@ -426,24 +426,19 @@ test("detect: new version not stable is a hard fail", async () => {
   }
 });
 
-test("detect: version not increased is a hard fail", async () => {
+test("detect: version decrease is ordinary with is-release=false and zero PR calls (revert regression 0.1.0 -> 0.0.0)", async () => {
   const ctx = detectFixture();
   try {
     const before = git(["rev-parse", "HEAD"], {
       cwd: ctx.fixture.consumer,
     }).stdout.trim();
     const after = releaseCommit(ctx, { version: "1.2.1" });
-    const problems = [];
-    const code = await detect({
-      cwd: ctx.fixture.consumer,
-      env: { ...ctx.env, BEFORE_SHA: before, GITHUB_SHA: after },
-      log: (line) => problems.push(line),
-    });
-    assert.equal(code, 1);
-    assert.match(
-      problems.join("\n"),
-      /Checked: whether the new version strictly increases\./,
-    );
+    const code = await runDetect(ctx, before, after);
+    assert.equal(code, 0);
+    const out = ctx.output();
+    assert.match(out, /^is-release=false$/m);
+    assert.match(out, /^version=$/m);
+    assert.equal(ghCalls(ctx.fixture).length, 0);
   } finally {
     ctx.fixture.cleanup();
   }
