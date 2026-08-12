@@ -145,6 +145,7 @@ jobs:
           name: npm-release-flow-${{ github.sha }}
           path: .npm-release-flow-pack/
           if-no-files-found: error
+          include-hidden-files: true
 
   release:
     # Protected. Environment approval gates it. Installs no project deps and
