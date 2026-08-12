@@ -34,10 +34,10 @@ export function runAsScript(importMetaUrl, main) {
   if (!invoked) return;
   main()
     .then((code) => {
-      process.exit(code ?? 0);
+      process.exitCode = code;
     })
     .catch((err) => {
       console.error(err);
-      process.exit(1);
+      process.exitCode = 1;
     });
 }
