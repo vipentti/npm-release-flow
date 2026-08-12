@@ -411,7 +411,7 @@ export async function tag(args, options = {}) {
     git(
       [
         "-c",
-        `http.extraheader=Authorization: Bearer ${token}`,
+        `http.extraheader=Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
         "push",
         "origin",
         tagRef,
@@ -496,7 +496,7 @@ export async function tag(args, options = {}) {
     git(
       [
         "-c",
-        `http.extraheader=Authorization: Bearer ${token}`,
+        `http.extraheader=Authorization: Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`,
         "push",
         "origin",
         tagRef,

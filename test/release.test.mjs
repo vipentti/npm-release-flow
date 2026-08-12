@@ -19,9 +19,11 @@ import { git, remoteRefSha } from "../src/lib/repo-state.mjs";
 import { integrityOfFile } from "../src/lib/pack-contract.mjs";
 import {
   createFixtureRepo,
+  createGitRecorder,
   createNpmShim,
   createSigningHome,
   envWithShim,
+  gitCalls,
   gpgFixtureUsable,
   npmCalls,
   prependPathDirs,
@@ -572,15 +574,24 @@ test(
   { skip: !hasGpg && "gpg is not available or ignores GNUPGHOME" },
   async () => {
     const ctx = releaseFixture();
+    const recorder = createGitRecorder(ctx.fixture.base);
+    const recordedEnv = {
+      ...ctx.env,
+      PATH:
+        recorder.dir +
+        (process.platform === "win32" ? ";" : ":") +
+        ctx.env.PATH,
+      GIT_FIXTURE_CALLS: recorder.callsFile,
+    };
     try {
       seedPublishState(ctx);
       const signing = createSigningHome(ctx.fixture.base);
       git(["config", "user.signingkey", signing.fingerprint], {
         cwd: ctx.fixture.consumer,
-        env: ctx.env,
+        env: recordedEnv,
       });
       const env = {
-        ...ctx.env,
+        ...recordedEnv,
         GNUPGHOME: signing.home,
         NPM_RELEASE_FLOW_GPG_FINGERPRINT: signing.fingerprint,
       };
@@ -597,6 +608,19 @@ test(
         env,
       });
       assert.ok(remote);
+      // Tag push uses Basic x-access-token auth, not Bearer.
+      const expected = `http.extraheader=Authorization: Basic ${Buffer.from(`x-access-token:${env.NPM_RELEASE_FLOW_APP_TOKEN}`).toString("base64")}`;
+      const calls = gitCalls(recorder.callsFile);
+      const push = calls.find((call) => call.includes("push"));
+      assert.ok(push, "a git push was recorded");
+      assert.ok(
+        push.includes(expected),
+        `push must use Basic x-access-token auth (expected ${expected}, got ${JSON.stringify(push)})`,
+      );
+      assert.ok(
+        push.every((arg) => !arg.includes("Authorization: Bearer")),
+        `push must not use Bearer auth (got ${JSON.stringify(push)})`,
+      );
       // npm publish ran with the pinned registry.
       assert.ok(
         npmCalls(ctx.npmShim.callsFile).some((call) => call[0] === "publish"),
