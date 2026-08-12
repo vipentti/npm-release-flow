@@ -127,11 +127,8 @@ export function classifyRelease(input) {
     );
   }
   if (!isStrictIncrease(beforeParsed, afterParsed)) {
-    return invalid(
-      "whether the new version strictly increases",
-      `new version ${afterVersion} is not greater than previous ${beforeVersion}`,
-      "release a higher stable version",
-    );
+    // A version decrease is not a release attempt (revert/anomaly) and must skip.
+    return { verdict: "ordinary", version: null, reasons: [] };
   }
   // TS cannot narrow `afterVersion` through the parsed check; from here on
   // the release version is a string.

@@ -151,19 +151,36 @@ test("new or previous version not stable X.Y.Z is a hard fail", () => {
   assert.match(unreadable.reasons[0], /unreadable/);
 });
 
-test("version not increased is a hard fail", () => {
+test("version decrease is ordinary (revert/anomaly must skip)", () => {
   const verdict = classifyRelease(
     validInput({ afterPkg: { name: "consumer", version: "1.2.1" } }),
   );
-  assert.equal(verdict.verdict, "invalid");
-  assert.match(
-    verdict.reasons[0],
-    /Checked: whether the new version strictly increases\./,
+  assert.deepEqual(verdict, {
+    verdict: "ordinary",
+    version: null,
+    reasons: [],
+  });
+  const revert = classifyRelease(
+    validInput({
+      beforePkg: { name: "consumer", version: "0.1.0" },
+      afterPkg: { name: "consumer", version: "0.0.0" },
+      beforeLock: {
+        name: "consumer",
+        version: "0.1.0",
+        packages: { "": { name: "consumer", version: "0.1.0" } },
+      },
+      afterLock: {
+        name: "consumer",
+        version: "0.0.0",
+        packages: { "": { name: "consumer", version: "0.0.0" } },
+      },
+    }),
   );
-  assert.match(
-    verdict.reasons[0],
-    /Found: new version 1\.2\.1 is not greater than previous 1\.2\.2\./,
-  );
+  assert.deepEqual(revert, {
+    verdict: "ordinary",
+    version: null,
+    reasons: [],
+  });
 });
 
 test("lockfile mismatch vs version is a hard fail", () => {
