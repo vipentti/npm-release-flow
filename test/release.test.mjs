@@ -574,52 +574,6 @@ test(
   { skip: !hasGpg && "gpg is not available or ignores GNUPGHOME" },
   async () => {
     const ctx = releaseFixture();
-    try {
-      seedPublishState(ctx);
-      const signing = createSigningHome(ctx.fixture.base);
-      git(["config", "user.signingkey", signing.fingerprint], {
-        cwd: ctx.fixture.consumer,
-        env: ctx.env,
-      });
-      const env = {
-        ...ctx.env,
-        GNUPGHOME: signing.home,
-        NPM_RELEASE_FLOW_GPG_FINGERPRINT: signing.fingerprint,
-      };
-      const problems = [];
-      const code = await release({
-        cwd: ctx.fixture.consumer,
-        env,
-        log: (line) => problems.push(line),
-      });
-      assert.equal(code, 0, problems.join("\n"));
-      // The tag was pushed and verified.
-      const remote = remoteRefSha("refs/tags/v1.2.2", {
-        cwd: ctx.fixture.consumer,
-        env,
-      });
-      assert.ok(remote);
-      // npm publish ran with the pinned registry.
-      assert.ok(
-        npmCalls(ctx.npmShim.callsFile).some((call) => call[0] === "publish"),
-      );
-      // The GitHub Release was created with --verify-tag.
-      assert.ok(
-        readGhCalls(ctx.fixture).some(
-          (call) => call[1] === "create" && call.includes("--verify-tag"),
-        ),
-      );
-    } finally {
-      ctx.fixture.cleanup();
-    }
-  },
-);
-
-test(
-  "release: tag push uses Basic x-access-token auth, not Bearer",
-  { skip: !hasGpg && "gpg is not available or ignores GNUPGHOME" },
-  async () => {
-    const ctx = releaseFixture();
     const recorder = createGitRecorder(ctx.fixture.base);
     const recordedEnv = {
       ...ctx.env,
@@ -641,12 +595,20 @@ test(
         GNUPGHOME: signing.home,
         NPM_RELEASE_FLOW_GPG_FINGERPRINT: signing.fingerprint,
       };
+      const problems = [];
       const code = await release({
         cwd: ctx.fixture.consumer,
         env,
-        log: () => {},
+        log: (line) => problems.push(line),
       });
-      assert.equal(code, 0);
+      assert.equal(code, 0, problems.join("\n"));
+      // The tag was pushed and verified.
+      const remote = remoteRefSha("refs/tags/v1.2.2", {
+        cwd: ctx.fixture.consumer,
+        env,
+      });
+      assert.ok(remote);
+      // Tag push uses Basic x-access-token auth, not Bearer.
       const expected = `http.extraheader=Authorization: Basic ${Buffer.from(`x-access-token:${env.NPM_RELEASE_FLOW_APP_TOKEN}`).toString("base64")}`;
       const calls = gitCalls(recorder.callsFile);
       const push = calls.find((call) => call.includes("push"));
@@ -658,6 +620,16 @@ test(
       assert.ok(
         push.every((arg) => !arg.includes("Authorization: Bearer")),
         `push must not use Bearer auth (got ${JSON.stringify(push)})`,
+      );
+      // npm publish ran with the pinned registry.
+      assert.ok(
+        npmCalls(ctx.npmShim.callsFile).some((call) => call[0] === "publish"),
+      );
+      // The GitHub Release was created with --verify-tag.
+      assert.ok(
+        readGhCalls(ctx.fixture).some(
+          (call) => call[1] === "create" && call.includes("--verify-tag"),
+        ),
       );
     } finally {
       ctx.fixture.cleanup();
