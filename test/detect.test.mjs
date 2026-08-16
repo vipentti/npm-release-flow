@@ -18,6 +18,7 @@ import {
 const KIT_VERSION = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 ).version;
+const MISMATCH_KIT_VERSION = KIT_VERSION === "2.0.0" ? "2.0.1" : "2.0.0";
 
 /**
  * Script the gh shim's PR association for a triggering commit (the
@@ -231,7 +232,7 @@ test("detect: skew-marker mismatch is a hard fail", async () => {
       cwd: ctx.fixture.consumer,
     }).stdout.trim();
     setCommitPull(ctx, mergeSha, {
-      body: "Kit: @vipentti/npm-release-flow@2.0.0\n",
+      body: `Kit: @vipentti/npm-release-flow@${MISMATCH_KIT_VERSION}\n`,
     });
     const problems = [];
     const code = await detect({
@@ -248,7 +249,7 @@ test("detect: skew-marker mismatch is a hard fail", async () => {
     assert.match(
       text,
       new RegExp(
-        `Found: PR body stamps 2\\.0\\.0, but the kit package\\.json is ${KIT_VERSION.replace(/\./g, "\\.")}\\.`,
+        `Found: PR body stamps ${MISMATCH_KIT_VERSION.replace(/\./g, "\\.")}, but the kit package\\.json is ${KIT_VERSION.replace(/\./g, "\\.")}\\.`,
       ),
     );
   } finally {
