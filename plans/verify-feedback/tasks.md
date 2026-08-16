@@ -15,7 +15,7 @@
       still re-exports the module and does not grow a named export for the
       limit.
 
-- [ ] T2 Wire `src/verify.mjs` through the helper at every
+- [x] T2 Wire `src/verify.mjs` through the helper at every
       `err.stderr.trim()` detail site (`npm ci`, `release:verify`,
       build-if-declared, `npm pack`, tarball extract, smoke install). Keep
       each site's `checked:` label and `detail || "<generic>"` fallback.

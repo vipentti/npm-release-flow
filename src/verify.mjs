@@ -22,9 +22,11 @@ import {
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { describeFailure } from "./lib/errors.mjs";
+import {
+  commandFailureDetail,
+  describeFailure,
+} from "./lib/errors.mjs";
 import { runSync, tarPath } from "./lib/spawn.mjs";
-import { CommandError } from "./lib/errors.mjs";
 import { mandatoryPrerequisiteProblem } from "./lib/control-files.mjs";
 import { parseStableVersion } from "./lib/versions.mjs";
 import { runAsScript } from "./lib/run-script.mjs";
@@ -204,8 +206,7 @@ export async function verify(options = {}) {
   try {
     runSync("npm", ["ci"], { cwd, env });
   } catch (err) {
-    const detail =
-      err instanceof CommandError ? err.stderr.trim() : String(err);
+    const detail = commandFailureDetail(err);
     return fail(
       describeFailure({
         checked: "npm ci",
@@ -217,8 +218,7 @@ export async function verify(options = {}) {
   try {
     runSync("npm", ["run", "release:verify"], { cwd, env });
   } catch (err) {
-    const detail =
-      err instanceof CommandError ? err.stderr.trim() : String(err);
+    const detail = commandFailureDetail(err);
     return fail(
       describeFailure({
         checked: "npm run release:verify",
@@ -234,8 +234,7 @@ export async function verify(options = {}) {
     try {
       runSync("npm", ["run", "build"], { cwd, env });
     } catch (err) {
-      const detail =
-        err instanceof CommandError ? err.stderr.trim() : String(err);
+      const detail = commandFailureDetail(err);
       return fail(
         describeFailure({
           checked: "npm run build (build-if-declared)",
@@ -265,8 +264,7 @@ export async function verify(options = {}) {
     // array. Both are the exact report; normalize to entries for validation.
     reportEntries = Array.isArray(report) ? report : Object.values(report);
   } catch (err) {
-    const detail =
-      err instanceof CommandError ? err.stderr.trim() : String(err);
+    const detail = commandFailureDetail(err);
     return fail(
       describeFailure({
         checked: "npm pack --json --ignore-scripts",
@@ -334,8 +332,7 @@ export async function verify(options = {}) {
       );
     }
   } catch (err) {
-    const detail =
-      err instanceof CommandError ? err.stderr.trim() : String(err);
+    const detail = commandFailureDetail(err);
     return fail(
       describeFailure({
         checked: "extracting the packed tarball",
@@ -369,8 +366,7 @@ export async function verify(options = {}) {
       { cwd: smokeDir, env },
     );
   } catch (err) {
-    const detail =
-      err instanceof CommandError ? err.stderr.trim() : String(err);
+    const detail = commandFailureDetail(err);
     return fail(
       describeFailure({
         checked:

@@ -311,6 +311,29 @@ test("verify: self-host fixture passes without a self devDependency", async () =
   }
 });
 
+test("verify: release:verify stdout-only failure surfaces stdout detail", async () => {
+  const ctx = verifyFixture();
+  try {
+    const token = "STDOUT_ONLY_VERIFY_TOKEN_9f3b1a";
+    const pkgPath = join(ctx.fixture.consumer, "package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+    pkg.scripts["release:verify"] = `node -e "console.log('${token}'); process.exit(1)"`;
+    writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+    const problems = [];
+    const code = await verify({
+      cwd: ctx.fixture.consumer,
+      env: { ...ctx.env, npm_config_loglevel: "silent" },
+      log: (line) => problems.push(line),
+    });
+    assert.equal(code, 1);
+    const text = problems.join("\n");
+    assert.match(text, /Checked: npm run release:verify\./);
+    assert.ok(text.includes(token), `expected token in: ${text}`);
+  } finally {
+    ctx.fixture.cleanup();
+  }
+});
+
 test("kitRepository derives owner/name from repository.url", () => {
   assert.equal(
     kitRepository({
