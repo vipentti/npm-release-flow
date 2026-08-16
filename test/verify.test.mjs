@@ -24,7 +24,9 @@ import {
   envWithShim,
 } from "./helpers/fixture.mjs";
 
-const KIT_VERSION = "1.0.0";
+const KIT_VERSION = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
 
 /**
  * Fixture wired for verify runs.
@@ -267,7 +269,12 @@ test("verify: skewed pin (installed kit version differs from the checkout) fails
       text,
       /Checked: that the installed kit version equals the kit checkout version\./,
     );
-    assert.match(text, /Found: installed 2\.0\.0, checkout 1\.0\.0\./);
+    assert.match(
+      text,
+      new RegExp(
+        `Found: installed 2\\.0\\.0, checkout ${KIT_VERSION.replace(/\./g, "\\.")}\\.`,
+      ),
+    );
   } finally {
     ctx.fixture.cleanup();
   }

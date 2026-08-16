@@ -81,7 +81,10 @@ test(
       // A normal consumer (CALLER_REPOSITORY differs from the fixture's own
       // repository.url), so the pin agreement is enforced and the kit must be
       // installed as a devDependency at the checkout version before verify.
-      addKitDevDependency(fixture, { version: "1.0.0" });
+      const kitVersion = JSON.parse(
+        readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+      ).version;
+      addKitDevDependency(fixture, { version: kitVersion });
       git(["add", "package.json", "package-lock.json"], {
         cwd: fixture.consumer,
       });
@@ -143,7 +146,7 @@ test(
               state: "closed",
               base: "main",
               head: "release/v1.2.3",
-              body: "Kit: @vipentti/npm-release-flow@1.0.0\n\nRelease notes here.",
+              body: `Kit: @vipentti/npm-release-flow@${kitVersion}\n\nRelease notes here.`,
             },
           ],
         },

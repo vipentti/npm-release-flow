@@ -1,6 +1,6 @@
 /**
  * CLI entry-point wiring for modules invoked directly as scripts
- * (`node <path>`): the workflow runs `node .npm-release-flow/src/<name>.mjs`
+ * (`node <path>`): the workflow runs `node "${{ runner.temp }}/npm-release-flow-kit/src/<name>.mjs"`
  * and the bin runs the CLI, while imports (tests, programmatic use) must
  * stay side-effect free. `runAsScript` is the single implementation of the
  * "run the main only when executed directly" concern.

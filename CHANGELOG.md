@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The reusable workflow now checks out the kit to
+  `${{ runner.temp }}/npm-release-flow-kit` outside the consumer worktree
+  so consumer tooling never scans kit internals. Consumers still pinned to
+  `e2e32a7` and earlier must exclude `.npm-release-flow/` locally (gitignore,
+  knip, eslint, prettier) until the pin is advanced.
+
 ## [0.1.1] - 2026-08-16
 
 ### Fixed

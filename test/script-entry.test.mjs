@@ -1,6 +1,6 @@
 /**
  * Regression test for the workflow script entry points: the release
- * workflow invokes `node .npm-release-flow/src/<name>.mjs` directly, so
+ * workflow invokes `node "${{ runner.temp }}/npm-release-flow-kit/src/<name>.mjs"` directly, so
  * every script it invokes must actually run when executed. The workflow
  * file is the single inventory: scripts are derived from it, spawned with
  * a minimal environment, and must fail closed (exit 1 with the kit's
@@ -71,7 +71,9 @@ test("every script invoked by the workflow runs standalone and fails closed", ()
   const invoked = [
     ...new Set(
       [
-        ...workflow.matchAll(/node \.npm-release-flow\/src\/([a-z-]+\.mjs)/g),
+        ...workflow.matchAll(
+          /node "\$\{\{ runner\.temp \}\}\/npm-release-flow-kit\/src\/([a-z-]+\.mjs)"/g,
+        ),
       ].map((match) => match[1]),
     ),
   ];

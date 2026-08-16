@@ -1,3 +1,6 @@
 node_modules/
 *.tgz
 /actionlint
+.npm-release-flow/
+.npm-release-flow-pack/
+.npm-release-flow-artifact/

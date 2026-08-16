@@ -19,8 +19,9 @@ import {
   appendFileSync,
   readdirSync,
 } from "node:fs";
-import { resolve, join } from "node:path";
+import { dirname, resolve, join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 import { commandFailureDetail, describeFailure } from "./lib/errors.mjs";
 import { runSync, tarPath } from "./lib/spawn.mjs";
@@ -35,6 +36,8 @@ import {
 
 const PACK_DIR = ".npm-release-flow-pack";
 const KIT_PACKAGE = "@vipentti/npm-release-flow";
+
+const moduleDir = dirname(fileURLToPath(import.meta.url));
 
 /**
  * @typedef {object} VerifyOptions
@@ -72,7 +75,7 @@ export function kitRepository(manifest) {
  * itself (self-host), no self devDependency is required; pin agreement is
  * proven by the detect marker check.
  *
- * @param {string} cwd
+ * @param {string} cwd Repository root (the consumer tree).
  * @param {Record<string, any>} manifest
  * @param {string} callerRepository
  * @returns {string | null} The problem, or null when pins agree.
@@ -85,7 +88,7 @@ function skewProblem(cwd, manifest, callerRepository) {
   let checkoutVersion;
   try {
     const kitManifest = JSON.parse(
-      readFileSync(resolve(cwd, ".npm-release-flow", "package.json"), "utf8"),
+      readFileSync(resolve(moduleDir, "..", "package.json"), "utf8"),
     );
     checkoutVersion =
       typeof kitManifest.version === "string" ? kitManifest.version : null;
@@ -94,10 +97,9 @@ function skewProblem(cwd, manifest, callerRepository) {
   }
   if (checkoutVersion === null) {
     return describeFailure({
-      checked: "the kit checkout version at .npm-release-flow/package.json",
+      checked: "the kit checkout version at the kit package.json",
       found: "the kit package.json is missing or has no version",
-      correction:
-        "check out the kit at the pinned workflow SHA into .npm-release-flow",
+      correction: "check out the kit at the pinned workflow SHA",
     });
   }
   let installedVersion;

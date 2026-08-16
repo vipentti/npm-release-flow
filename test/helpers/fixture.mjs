@@ -405,18 +405,9 @@ export function createFixtureRepo({ remote = true } = {}) {
     '#!/usr/bin/env node\nconsole.log("fixture-tool");\n',
     "utf8",
   );
-  // The guarded kit checkout the workflow creates at job time (detect reads
-  // its version for the skew-marker comparison).
-  mkdirSync(join(consumer, ".npm-release-flow"), { recursive: true });
-  writeFileSync(
-    join(consumer, ".npm-release-flow", "package.json"),
-    JSON.stringify(
-      { name: "@vipentti/npm-release-flow", version: "1.0.0" },
-      null,
-      2,
-    ) + "\n",
-    "utf8",
-  );
+  // Legacy fixture path kept for historical reference only; the kit now
+  // resolves its own package.json via import.meta.url, so no vendored dir
+  // is created inside the consumer.
 
   gitDirect(["init", "-b", "main"], gitCtx);
   // The identity, line-ending policy, and origin remote are written straight

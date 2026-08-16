@@ -8,5 +8,6 @@
     "src/release.mjs",
     "test/**/*.test.mjs"
   ],
-  "project": ["bin/**/*.mjs", "src/**/*.mjs", "test/**/*.mjs"]
+  "project": ["bin/**/*.mjs", "src/**/*.mjs", "test/**/*.mjs"],
+  "ignore": [".npm-release-flow/**"]
 }

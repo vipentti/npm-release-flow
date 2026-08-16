@@ -15,7 +15,9 @@ import {
   setGhRepoState,
 } from "./helpers/fixture.mjs";
 
-const KIT_VERSION = "1.0.0";
+const KIT_VERSION = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
 
 /**
  * Script the gh shim's PR association for a triggering commit (the
@@ -46,8 +48,8 @@ function setCommitPull(
 }
 
 /**
- * Fixture wired for detect runs: GITHUB_OUTPUT to a temp file, repository
- * identity set, and a kit checkout at `.npm-release-flow`.
+ * Fixture wired for detect runs: GITHUB_OUTPUT to a temp file and repository
+ * identity set. The kit checkout version is resolved via import.meta.url.
  */
 function detectFixture() {
   const fixture = createFixtureRepo();
@@ -245,7 +247,9 @@ test("detect: skew-marker mismatch is a hard fail", async () => {
     );
     assert.match(
       text,
-      /Found: PR body stamps 2\.0\.0, but \.npm-release-flow\/package\.json is 1\.0\.0\./,
+      new RegExp(
+        `Found: PR body stamps 2\\.0\\.0, but the kit package\\.json is ${KIT_VERSION.replace(/\./g, "\\.")}\\.`,
+      ),
     );
   } finally {
     ctx.fixture.cleanup();

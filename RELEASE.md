@@ -181,6 +181,15 @@ PR body's `Kit: @vipentti/npm-release-flow@<v>` marker against the kit
 checkout version at the pin) or runs the wrong kit source while the version
 guard still passes.
 
+## Kit checkout location
+
+The reusable workflow checks out the kit to
+`${{ runner.temp }}/npm-release-flow-kit` outside the consumer worktree so
+consumer tooling never scans kit internals. Consumers still pinned to
+e2e32a7 and earlier vendored the kit at `.npm-release-flow/`; while that
+pin is active, exclude `.npm-release-flow/` from git, knip, eslint, and
+prettier as shown in the README caller contract.
+
 ## Secret contract
 
 Unset secret expressions evaluate to the empty string (GitHub-documented).
