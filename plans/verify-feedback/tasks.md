@@ -1,6 +1,6 @@
 # Tasks: Richer verify failure feedback
 
-- [ ] T1 Add `commandFailureDetail` in `src/lib/errors.mjs` next to
+- [x] T1 Add `commandFailureDetail` in `src/lib/errors.mjs` next to
       `describeFailure`. Keep `COMMAND_FAILURE_DETAIL_LIMIT` (8192) module-private;
       do not export it. Behavior: non-CommandError becomes `String(err)`;
       CommandError returns `stderr.trim() || stdout.trim()` (stderr wins when
