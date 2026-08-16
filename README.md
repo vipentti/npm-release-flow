@@ -8,10 +8,8 @@ GitHub App, and publishes to npm through Trusted Publishing with provenance.
 
 ## Status
 
-The repository is public and the package is published at version `0.0.0`
-(the bootstrap release under the `bootstrap` dist-tag, deprecated once the
-first real release lands). The kit releases itself with its own workflow;
-the first real release is pending the setup in [RELEASE.md](RELEASE.md).
+The repository is public and the package is published at version `0.1.1`.
+The kit releases itself with its own workflow; see [RELEASE.md](RELEASE.md).
 
 Supported Node: `>=22.14.0` (from `engines`). The protected release job pins
 Node `24.11.1` / npm `11.6.2` and asserts both by exact version; the verify
@@ -104,7 +102,7 @@ concurrency:
 
 jobs:
   release:
-    uses: vipentti/npm-release-flow/.github/workflows/release.yml@2ddb84caa71d25946a8c718d9364ef6db2699704
+    uses: vipentti/npm-release-flow/.github/workflows/release.yml@e2e32a756c374d62f35e460cc4020b071d449750
     permissions:
       contents: write
       pull-requests: read
