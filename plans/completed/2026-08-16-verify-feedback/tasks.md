@@ -1,6 +1,6 @@
 # Tasks: Richer verify failure feedback
 
-- [ ] T1 Add `commandFailureDetail` in `src/lib/errors.mjs` next to
+- [x] T1 Add `commandFailureDetail` in `src/lib/errors.mjs` next to
       `describeFailure`. Keep `COMMAND_FAILURE_DETAIL_LIMIT` (8192) module-private;
       do not export it. Behavior: non-CommandError becomes `String(err)`;
       CommandError returns `stderr.trim() || stdout.trim()` (stderr wins when
@@ -15,7 +15,7 @@
       still re-exports the module and does not grow a named export for the
       limit.
 
-- [ ] T2 Wire `src/verify.mjs` through the helper at every
+- [x] T2 Wire `src/verify.mjs` through the helper at every
       `err.stderr.trim()` detail site (`npm ci`, `release:verify`,
       build-if-declared, `npm pack`, tarball extract, smoke install). Keep
       each site's `checked:` label and `detail || "<generic>"` fallback.
@@ -26,7 +26,7 @@
       and contains the token.
       Verify: `node --test test/verify.test.mjs test/errors.test.mjs` passes.
 
-- [ ] T3 Replace the remaining stderr-only detail extractions that feed
+- [x] T3 Replace the remaining stderr-only detail extractions that feed
       `found:` / mutation-error text:
       `src/detect.mjs`, `src/release.mjs`, `src/validate-artifact.mjs`,
       `src/commands/check.mjs`, `src/commands/prepare.mjs`,
@@ -38,10 +38,15 @@
       detail-composition hits (classifiers that only test `err.stderr`
       for 404/status may remain); `npm test` still passes.
 
-- [ ] T4 Record the change under `CHANGELOG.md` `## [Unreleased]`. Add a
+- [x] T4 Record the change under `CHANGELOG.md` `## [Unreleased]`. Add a
       short README note (verify / command-failure section is enough) that
       `found:` prefers captured stderr and falls back to stdout, capped.
       No RELEASE.md change unless a sentence there already claims
       stderr-only behavior.
       Verify: `npm run lint`, `npm run format:check`, `npm run typecheck`,
       `npm run knip`, and `npm test` all pass.
+
+## Completion
+
+- Completed at: 2026-08-16T05:45:10.901Z
+- Mode: normal

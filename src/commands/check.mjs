@@ -15,7 +15,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { describeFailure } from "../lib/errors.mjs";
+import { commandFailureDetail, describeFailure } from "../lib/errors.mjs";
 import { CommandError } from "../lib/errors.mjs";
 import { git, gh } from "../lib/repo-state.mjs";
 import { hasUnreleasedSection } from "../lib/changelog.mjs";
@@ -209,8 +209,7 @@ export async function check(args, options = {}) {
       ctx,
     ).stdout.trim();
   } catch (err) {
-    const detail =
-      err instanceof CommandError ? err.stderr.trim() : String(err);
+    const detail = commandFailureDetail(err);
     problems.push(
       describeFailure({
         checked: "the repository identity via gh repo view",

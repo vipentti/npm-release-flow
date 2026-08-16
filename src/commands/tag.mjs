@@ -17,6 +17,7 @@ import {
   CliError,
   CommandError,
   ExitCode,
+  commandFailureDetail,
   describeFailure,
 } from "../lib/errors.mjs";
 import {
@@ -223,8 +224,7 @@ async function appTokenForPush(ctx) {
       ctx,
     ).stdout.trim();
   } catch (err) {
-    const detail =
-      err instanceof CommandError ? err.stderr.trim() : String(err);
+    const detail = commandFailureDetail(err);
     throw new CliError(
       describeFailure({
         checked: "the repository identity via gh repo view",
@@ -504,8 +504,7 @@ export async function tag(args, options = {}) {
       ctx,
     );
   } catch (err) {
-    const detail =
-      err instanceof CommandError ? err.stderr.trim() : String(err);
+    const detail = commandFailureDetail(err);
     throw new CliError(
       `${describeFailure({
         checked: `pushing the tag v${version} to origin`,

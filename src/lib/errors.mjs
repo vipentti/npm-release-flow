@@ -68,6 +68,33 @@ export class CliError extends Error {
   }
 }
 
+const COMMAND_FAILURE_DETAIL_LIMIT = 8192;
+const TRUNCATION_SUFFIX = "\n...[truncated]";
+
+/**
+ * Detail from a failed command: trimmed stderr when present, otherwise
+ * trimmed stdout. Caps the selected detail so the returned string,
+ * including the truncation marker, is at most 8192 characters.
+ *
+ * @param {unknown} err
+ * @returns {string}
+ */
+export function commandFailureDetail(err) {
+  let detail;
+  if (err instanceof CommandError) {
+    const stderr = err.stderr.trim();
+    detail = stderr ? stderr : err.stdout.trim();
+  } else {
+    detail = String(err);
+  }
+  if (detail.length > COMMAND_FAILURE_DETAIL_LIMIT) {
+    detail =
+      detail.slice(0, COMMAND_FAILURE_DETAIL_LIMIT - TRUNCATION_SUFFIX.length) +
+      TRUNCATION_SUFFIX;
+  }
+  return detail;
+}
+
 /**
  * Compose a failure message honoring the error-content contract: what was
  * checked, what state was actually found, and the correction action.

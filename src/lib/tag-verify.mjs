@@ -6,7 +6,12 @@
  */
 
 import { msysPath, runSync } from "./spawn.mjs";
-import { CliError, CommandError, describeFailure } from "./errors.mjs";
+import {
+  CliError,
+  CommandError,
+  commandFailureDetail,
+  describeFailure,
+} from "./errors.mjs";
 import { configuredSigningKey, gpgProgram, git } from "./repo-state.mjs";
 
 /**
@@ -68,7 +73,7 @@ export function commitSigningState(ctx) {
   } catch (err) {
     const detail =
       err instanceof CommandError
-        ? err.stderr.trim() || err.message
+        ? commandFailureDetail(err) || err.message
         : String(err);
     return {
       ok: false,
@@ -185,7 +190,7 @@ export function fingerprintSigningState(ctx) {
   } catch (err) {
     const detail =
       err instanceof CommandError
-        ? err.stderr.trim() || err.message
+        ? commandFailureDetail(err) || err.message
         : String(err);
     return {
       ok: false,

@@ -17,9 +17,8 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-import { describeFailure } from "./lib/errors.mjs";
+import { commandFailureDetail, describeFailure } from "./lib/errors.mjs";
 import { runSync, tarPath } from "./lib/spawn.mjs";
-import { CommandError } from "./lib/errors.mjs";
 import { runAsScript } from "./lib/run-script.mjs";
 import {
   integrityOfFile,
@@ -211,8 +210,7 @@ export async function validateArtifact(options = {}) {
       );
     }
   } catch (err) {
-    const detail =
-      err instanceof CommandError ? err.stderr.trim() : String(err);
+    const detail = commandFailureDetail(err);
     return fail(
       describeFailure({
         checked: "the packed tarball contents",

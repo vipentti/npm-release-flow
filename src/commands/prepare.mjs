@@ -15,8 +15,8 @@ import { fileURLToPath } from "node:url";
 
 import {
   CliError,
-  CommandError,
   ExitCode,
+  commandFailureDetail,
   describeFailure,
 } from "../lib/errors.mjs";
 import {
@@ -262,8 +262,7 @@ export async function prepare(args, options = {}) {
     );
     prs = JSON.parse(result.stdout || "[]");
   } catch (err) {
-    const detail =
-      err instanceof CommandError ? err.stderr.trim() : String(err);
+    const detail = commandFailureDetail(err);
     throw new CliError(
       describeFailure({
         checked: "release PR state for " + branchName,
@@ -490,7 +489,7 @@ export async function prepare(args, options = {}) {
     } catch (err) {
       throw mutationError(
         "creating the release branch",
-        err instanceof CommandError ? err.stderr.trim() : String(err),
+        commandFailureDetail(err),
         "resolve the branch conflict, then rerun",
         created.join(", ") || "nothing",
         "cut control files are modified in the worktree",
@@ -503,7 +502,7 @@ export async function prepare(args, options = {}) {
     } catch (err) {
       throw mutationError(
         "staging the release control files",
-        err instanceof CommandError ? err.stderr.trim() : String(err),
+        commandFailureDetail(err),
         "stage the three control files manually, then rerun",
         created.join(", ") || "nothing",
         `the cut control files on ${branchName} are unstaged`,
@@ -514,7 +513,7 @@ export async function prepare(args, options = {}) {
     } catch (err) {
       throw mutationError(
         "creating the signed release commit",
-        err instanceof CommandError ? err.stderr.trim() : String(err),
+        commandFailureDetail(err),
         "ensure the signing key is available (see the signing preflight), then commit manually",
         created.join(", ") || "nothing",
         `the staged control-file changes on ${branchName} are uncommitted`,
@@ -554,7 +553,7 @@ export async function prepare(args, options = {}) {
     } catch (err) {
       throw mutationError(
         "the release commit signature",
-        err instanceof CommandError ? err.stderr.trim() : String(err),
+        commandFailureDetail(err),
         "re-sign the commit with the configured key",
         created.join(", ") || "nothing",
         "verify and fix the commit manually",
@@ -584,7 +583,7 @@ export async function prepare(args, options = {}) {
     } catch (err) {
       throw mutationError(
         `pushing ${branchName} to origin`,
-        err instanceof CommandError ? err.stderr.trim() : String(err),
+        commandFailureDetail(err),
         "push the branch manually, then create the PR",
         created.join(", ") || "nothing",
         `push ${branchName} and create the release PR manually`,
@@ -629,8 +628,7 @@ export async function prepare(args, options = {}) {
       );
       prUrl = pr.stdout.trim();
     } catch (err) {
-      const detail =
-        err instanceof CommandError ? err.stderr.trim() : String(err);
+      const detail = commandFailureDetail(err);
       throw mutationError(
         "creating the release PR",
         detail || "gh pr create failed",
@@ -646,7 +644,7 @@ export async function prepare(args, options = {}) {
     } catch (err) {
       throw mutationError(
         "returning to the main branch",
-        err instanceof CommandError ? err.stderr.trim() : String(err),
+        commandFailureDetail(err),
         "check out main manually",
         created.join(", ") || "nothing",
         "nothing; the release is prepared (check out main at your convenience)",

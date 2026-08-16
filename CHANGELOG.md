@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Command-failure `Found:` messages now prefer captured stderr and fall back
+  to captured stdout when stderr is empty (capped at 8192 characters including
+  `\n...[truncated]`). This surfaces stdout-only failures such as
+  `git diff --exit-code` at the end of `release:verify` instead of falling back
+  to the generic message.
+
 ## [0.1.0] - 2026-08-12
 
 - CLI commands `prepare`, `tag`, and `check` with a dry-run default and an
