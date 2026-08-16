@@ -150,6 +150,14 @@ following:
 - Local `gh` authentication, a git identity, a commit-signing key, and the
   release GPG fingerprint's secret key in the local keyring.
 
+## Failure diagnostics
+
+Command-failure `Found:` messages prefer captured stderr and fall back to
+captured stdout when stderr is empty (for example, `git diff --exit-code` at
+the end of `release:verify` writing a diff to stdout). The selected detail is
+capped so the returned string including `\n...[truncated]` is at most
+8192 characters.
+
 ## Security and trust model
 
 - Consumer-controlled code (dependency installs, `release:verify`, build)

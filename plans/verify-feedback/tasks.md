@@ -26,7 +26,7 @@
       and contains the token.
       Verify: `node --test test/verify.test.mjs test/errors.test.mjs` passes.
 
-- [ ] T3 Replace the remaining stderr-only detail extractions that feed
+- [x] T3 Replace the remaining stderr-only detail extractions that feed
       `found:` / mutation-error text:
       `src/detect.mjs`, `src/release.mjs`, `src/validate-artifact.mjs`,
       `src/commands/check.mjs`, `src/commands/prepare.mjs`,
@@ -38,7 +38,7 @@
       detail-composition hits (classifiers that only test `err.stderr`
       for 404/status may remain); `npm test` still passes.
 
-- [ ] T4 Record the change under `CHANGELOG.md` `## [Unreleased]`. Add a
+- [x] T4 Record the change under `CHANGELOG.md` `## [Unreleased]`. Add a
       short README note (verify / command-failure section is enough) that
       `found:` prefers captured stderr and falls back to stdout, capped.
       No RELEASE.md change unless a sentence there already claims
