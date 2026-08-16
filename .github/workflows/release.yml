@@ -64,6 +64,13 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Relocate the kit outside the worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e "${{ runner.temp }}/npm-release-flow-kit" || { echo "kit temp path already exists" >&2; exit 1; }
+          mv .npm-release-flow "${{ runner.temp }}/npm-release-flow-kit"
+
       - name: Detect release merge
         id: detect
         shell: bash
@@ -72,7 +79,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          node .npm-release-flow/src/detect.mjs
+          node "${{ runner.temp }}/npm-release-flow-kit/src/detect.mjs"
 
   verify:
     # Unprivileged. Runs every dependency install and all project code, then
@@ -110,6 +117,13 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Relocate the kit outside the worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e "${{ runner.temp }}/npm-release-flow-kit" || { echo "kit temp path already exists" >&2; exit 1; }
+          mv .npm-release-flow "${{ runner.temp }}/npm-release-flow-kit"
+
       - name: Resolve the consumer's Node version
         id: node-version
         shell: bash
@@ -137,7 +151,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          node .npm-release-flow/src/verify.mjs
+          node "${{ runner.temp }}/npm-release-flow-kit/src/verify.mjs"
 
       - name: Upload the packed artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -187,6 +201,13 @@ jobs:
           path: .npm-release-flow
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Relocate the kit outside the worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e "${{ runner.temp }}/npm-release-flow-kit" || { echo "kit temp path already exists" >&2; exit 1; }
+          mv .npm-release-flow "${{ runner.temp }}/npm-release-flow-kit"
 
       # Central pinned toolchain (§7): exact Node 24.11.1 / npm 11.6.2, with
       # the registry pinned to npmjs.com so the protected path can never be
@@ -246,7 +267,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          node .npm-release-flow/src/revalidate.mjs
+          node "${{ runner.temp }}/npm-release-flow-kit/src/revalidate.mjs"
 
       # Download exactly the verify job's artifact (never the run's other
       # artifacts) to a dedicated path.
@@ -265,7 +286,7 @@ jobs:
           ARTIFACT_DIR: ${{ steps.download.outputs.download-path }}
         run: |
           set -euo pipefail
-          node .npm-release-flow/src/validate-artifact.mjs
+          node "${{ runner.temp }}/npm-release-flow-kit/src/validate-artifact.mjs"
 
       # Fresh GNUPGHOME: job-scoped, chmod 700, torn down unconditionally.
       - name: Initialize the GPG home
@@ -363,7 +384,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          node .npm-release-flow/src/revalidate.mjs
+          node "${{ runner.temp }}/npm-release-flow-kit/src/revalidate.mjs"
 
       # Step-scoped non-empty assertion of the App private key immediately
       # before the token is minted; the App token is the tag-push identity.
@@ -401,7 +422,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          node .npm-release-flow/src/release.mjs
+          node "${{ runner.temp }}/npm-release-flow-kit/src/release.mjs"
 
       # Unconditional key-material teardown.
       - name: Clean up key material

@@ -24,7 +24,10 @@ import {
   envWithShim,
 } from "./helpers/fixture.mjs";
 
-const KIT_VERSION = "1.0.0";
+const KIT_VERSION = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
+const MISMATCH_KIT_VERSION = KIT_VERSION === "2.0.0" ? "2.0.1" : "2.0.0";
 
 /**
  * Fixture wired for verify runs.
@@ -254,7 +257,10 @@ test("verify: normal consumer with an agreeing pin passes", async () => {
 test("verify: skewed pin (installed kit version differs from the checkout) fails", async () => {
   const ctx = verifyFixture();
   try {
-    addKitDevDependency(ctx.fixture, { version: "2.0.0", env: ctx.env });
+    addKitDevDependency(ctx.fixture, {
+      version: MISMATCH_KIT_VERSION,
+      env: ctx.env,
+    });
     const problems = [];
     const code = await verify({
       cwd: ctx.fixture.consumer,
@@ -267,7 +273,12 @@ test("verify: skewed pin (installed kit version differs from the checkout) fails
       text,
       /Checked: that the installed kit version equals the kit checkout version\./,
     );
-    assert.match(text, /Found: installed 2\.0\.0, checkout 1\.0\.0\./);
+    assert.match(
+      text,
+      new RegExp(
+        `Found: installed ${MISMATCH_KIT_VERSION.replace(/\./g, "\\.")}, checkout ${KIT_VERSION.replace(/\./g, "\\.")}\\.`,
+      ),
+    );
   } finally {
     ctx.fixture.cleanup();
   }

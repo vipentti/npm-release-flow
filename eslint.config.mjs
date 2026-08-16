@@ -5,7 +5,7 @@ import prettierConfig from "eslint-config-prettier";
 
 export default [
   {
-    ignores: ["node_modules/", "actionlint", "*.tgz"],
+    ignores: ["node_modules/", "actionlint", "*.tgz", ".npm-release-flow/"],
   },
   js.configs.recommended,
   jsdoc.configs["flat/recommended"],

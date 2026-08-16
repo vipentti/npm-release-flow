@@ -129,6 +129,38 @@ jobs:
   Ordinary pushes are non-release detection runs and stay green; a release
   attempt cannot complete until the secrets a path needs exist (each release
   path asserts non-empty the secrets it actually uses before mutation).
+- Kit checkout: the workflow checks out the kit to
+  `${{ runner.temp }}/npm-release-flow-kit` outside the consumer worktree so
+  consumer tooling (knip, lint, format, git) never scans kit internals.
+  Consumers still pinned to `e2e32a7` and earlier vendor the kit at
+  `.npm-release-flow/` inside the worktree; until you advance the pin,
+  exclude that path locally:
+
+  `.gitignore`
+
+  ```gitignore
+  .npm-release-flow/
+  ```
+
+  `knip.json`
+
+  ```json
+  {
+    "ignore": [".npm-release-flow/**"]
+  }
+  ```
+
+  `eslint.config.mjs`
+
+  ```js
+  export default [{ ignores: [".npm-release-flow/"] }];
+  ```
+
+  `.prettierignore`
+
+  ```gitignore
+  .npm-release-flow/
+  ```
 
 ## Consumer prerequisites
 

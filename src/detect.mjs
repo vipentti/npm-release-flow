@@ -13,7 +13,8 @@
  */
 
 import { appendFileSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   CommandError,
@@ -28,6 +29,8 @@ import { runAsScript } from "./lib/run-script.mjs";
 
 const zeroSha = "0000000000000000000000000000000000000000";
 const shaPattern = /^[0-9a-f]{40}$/;
+
+const moduleDir = dirname(fileURLToPath(import.meta.url));
 
 /**
  * @typedef {object} DetectOptions
@@ -133,14 +136,14 @@ function writeOutput(env, name, value) {
  * triggering commit via `gh api .../commits/{sha}/pulls`, select the one
  * whose head is the expected `release/v<version>` branch (base main), read
  * its body, extract the `Kit: @vipentti/npm-release-flow@<version>` marker,
- * and compare it with the kit checkout's version at
- * `.npm-release-flow/package.json`. Release identity comes from the release
+ * and compare it with the kit checkout's own package.json. Release identity
+ * comes from the release
  * classification, not the commit message; the PR association is needed only
  * for the skew marker. Any failure is a hard fail (fail closed).
  *
  * @param {string} version The released version.
  * @param {string} afterSha The triggering commit SHA.
- * @param {string} cwd
+ * @param {string} cwd Repository root (the consumer tree).
  * @param {NodeJS.ProcessEnv} env
  * @returns {string | null} The problem, or null when the marker agrees.
  */
@@ -209,24 +212,28 @@ function skewMarkerProblem(version, afterSha, cwd, env) {
         "prepare the release with a current kit version so the marker is stamped",
     });
   }
-  const kitPackage = tryReadJson(cwd, ".npm-release-flow/package.json");
-  const kitVersion =
-    kitPackage !== null && typeof kitPackage.version === "string"
-      ? kitPackage.version
-      : null;
+  let kitVersion;
+  try {
+    const kitPackage = JSON.parse(
+      readFileSync(resolve(moduleDir, "..", "package.json"), "utf8"),
+    );
+    kitVersion =
+      typeof kitPackage.version === "string" ? kitPackage.version : null;
+  } catch {
+    kitVersion = null;
+  }
   if (kitVersion === null) {
     return describeFailure({
-      checked: "the kit checkout version at .npm-release-flow/package.json",
+      checked: "the kit checkout version at the kit package.json",
       found: "the kit package.json is missing or has no version",
-      correction:
-        "check out the kit at the pinned workflow SHA into .npm-release-flow",
+      correction: "check out the kit at the pinned workflow SHA",
     });
   }
   if (marker[1] !== kitVersion) {
     return describeFailure({
       checked:
         "that the kit version that prepared the release equals the kit checkout version",
-      found: `PR body stamps ${marker[1]}, but .npm-release-flow/package.json is ${kitVersion}`,
+      found: `PR body stamps ${marker[1]}, but the kit package.json is ${kitVersion}`,
       correction:
         "move both pins (CLI devDependency and workflow SHA) in a single upgrade PR",
     });
