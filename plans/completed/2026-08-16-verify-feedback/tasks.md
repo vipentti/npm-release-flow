@@ -45,3 +45,8 @@
       stderr-only behavior.
       Verify: `npm run lint`, `npm run format:check`, `npm run typecheck`,
       `npm run knip`, and `npm test` all pass.
+
+## Completion
+
+- Completed at: 2026-08-16T05:45:10.901Z
+- Mode: normal
