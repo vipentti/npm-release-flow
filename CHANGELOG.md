@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-16
+
 ### Fixed
 
 - Command-failure `Found:` messages now prefer captured stderr and fall back
@@ -24,5 +26,6 @@
   protected `release` job never installs consumer dependencies and loads
   secret material only after revalidation.
 
-[Unreleased]: https://github.com/vipentti/npm-release-flow/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/vipentti/npm-release-flow/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/vipentti/npm-release-flow/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/vipentti/npm-release-flow/compare/v0.0.0...v0.1.0
