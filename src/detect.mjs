@@ -15,7 +15,11 @@
 import { appendFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { CommandError, describeFailure } from "./lib/errors.mjs";
+import {
+  CommandError,
+  commandFailureDetail,
+  describeFailure,
+} from "./lib/errors.mjs";
 import { git, gh, localRefSha } from "./lib/repo-state.mjs";
 import { parseStableVersion } from "./lib/versions.mjs";
 import { classifyRelease } from "./lib/release-state.mjs";
@@ -171,8 +175,7 @@ function skewMarkerProblem(version, afterSha, cwd, env) {
             .split("\n")
             .map((line) => JSON.parse(line));
   } catch (err) {
-    const detail =
-      err instanceof CommandError ? err.stderr.trim() : String(err);
+    const detail = commandFailureDetail(err);
     return describeFailure({
       checked: `the pull requests associated with the triggering commit ${afterSha.slice(0, 8)} via gh api`,
       found: detail || "gh api failed",
@@ -298,8 +301,7 @@ export async function detect(options = {}) {
     try {
       git(["checkout", "--detach", afterSha], ctx);
     } catch (err) {
-      const detail =
-        err instanceof CommandError ? err.stderr.trim() : String(err);
+      const detail = commandFailureDetail(err);
       return fail(
         describeFailure({
           checked: "binding HEAD to the triggering SHA",

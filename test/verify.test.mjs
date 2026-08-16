@@ -317,7 +317,8 @@ test("verify: release:verify stdout-only failure surfaces stdout detail", async 
     const token = "STDOUT_ONLY_VERIFY_TOKEN_9f3b1a";
     const pkgPath = join(ctx.fixture.consumer, "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-    pkg.scripts["release:verify"] = `node -e "console.log('${token}'); process.exit(1)"`;
+    pkg.scripts["release:verify"] =
+      `node -e "console.log('${token}'); process.exit(1)"`;
     writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
     const problems = [];
     const code = await verify({

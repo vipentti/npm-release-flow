@@ -89,10 +89,8 @@ export function commandFailureDetail(err) {
   }
   if (detail.length > COMMAND_FAILURE_DETAIL_LIMIT) {
     detail =
-      detail.slice(
-        0,
-        COMMAND_FAILURE_DETAIL_LIMIT - TRUNCATION_SUFFIX.length,
-      ) + TRUNCATION_SUFFIX;
+      detail.slice(0, COMMAND_FAILURE_DETAIL_LIMIT - TRUNCATION_SUFFIX.length) +
+      TRUNCATION_SUFFIX;
   }
   return detail;
 }

@@ -93,7 +93,10 @@ test("commandFailureDetail: empty both streams returns empty string", () => {
 });
 
 test("commandFailureDetail: non-CommandError returns String(err)", () => {
-  assert.equal(commandFailureDetail(new Error("plain error")), "Error: plain error");
+  assert.equal(
+    commandFailureDetail(new Error("plain error")),
+    "Error: plain error",
+  );
   assert.equal(commandFailureDetail("string oops"), "string oops");
   assert.equal(commandFailureDetail(42), "42");
 });
@@ -104,7 +107,10 @@ test("commandFailureDetail: selected detail longer than limit is truncated to 81
   const detail = commandFailureDetail(err);
   assert.equal(detail.length, 8192);
   assert.ok(detail.endsWith("\n...[truncated]"));
-  assert.equal(detail.slice(0, 8192 - "\n...[truncated]".length), "a".repeat(8192 - "\n...[truncated]".length));
+  assert.equal(
+    detail.slice(0, 8192 - "\n...[truncated]".length),
+    "a".repeat(8192 - "\n...[truncated]".length),
+  );
 });
 
 test("commandFailureDetail: long stdout plus non-empty stderr selects stderr and caps it", () => {

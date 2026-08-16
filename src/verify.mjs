@@ -22,10 +22,7 @@ import {
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 
-import {
-  commandFailureDetail,
-  describeFailure,
-} from "./lib/errors.mjs";
+import { commandFailureDetail, describeFailure } from "./lib/errors.mjs";
 import { runSync, tarPath } from "./lib/spawn.mjs";
 import { mandatoryPrerequisiteProblem } from "./lib/control-files.mjs";
 import { parseStableVersion } from "./lib/versions.mjs";

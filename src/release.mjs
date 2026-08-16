@@ -19,6 +19,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import {
+  commandFailureDetail,
   describeFailure,
   CliError,
   CommandError,
@@ -182,8 +183,7 @@ export async function pollGithubSignatureVerification({
       );
       verified = result.stdout.trim();
     } catch (err) {
-      const detail =
-        err instanceof CommandError ? err.stderr.trim() : String(err);
+      const detail = commandFailureDetail(err);
       throw new CliError(
         describeFailure({
           checked: `GitHub's signature verification for the tag object ${tagObject.slice(0, 8)}`,
@@ -479,8 +479,7 @@ export async function ensureGithubRelease({ version, notes, cwd, env }) {
     if (err instanceof CommandError && err.status === 1) {
       present = false;
     } else {
-      const detail =
-        err instanceof CommandError ? err.stderr.trim() : String(err);
+      const detail = commandFailureDetail(err);
       throw new CliError(
         describeFailure({
           checked: `whether the release v${version} exists`,
