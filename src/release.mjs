@@ -414,7 +414,7 @@ export function visibilityDelays({ waitBudgetMs, initialDelayMs, maxDelayMs }) {
  * completes Boundary 6 and fails with a rerun-to-verify correction, instead of
  * publishing a second tarball.
  *
- * @param {{ version: string, name: string, repositoryUrl: string | null, gitHead: string, tarballPath: string, cwd: string, env: NodeJS.ProcessEnv, waitBudgetMs?: number, initialDelayMs?: number, maxDelayMs?: number }} ctx
+ * @param {{ version: string, name: string, repositoryUrl: string | null, gitHead: string, tarballPath: string, cwd: string, env: NodeJS.ProcessEnv, waitBudgetMs?: number, initialDelayMs?: number, maxDelayMs?: number, log?: (line: string) => void }} ctx
  * @returns {Promise<{ verified: boolean, polls: number, waitedMs: number }>}
  */
 export async function publishRelease({
@@ -428,6 +428,7 @@ export async function publishRelease({
   waitBudgetMs = 900000,
   initialDelayMs = 2000,
   maxDelayMs = 30000,
+  log = consoleLog,
 }) {
   /**
    * @param {Record<string, any>} published
@@ -456,7 +457,8 @@ export async function publishRelease({
 
   /**
    * Poll the packument until the published manifest appears (once right away,
-   * then after each scheduled delay) and verify the first one seen.
+   * then after each scheduled delay) and verify the first one seen. Every
+   * miss names the next delay so a long wait is readable in the job log.
    *
    * @param {number[]} delays
    * @returns {Promise<{ verified: boolean, polls: number, waitedMs: number }>}
@@ -464,7 +466,7 @@ export async function publishRelease({
   const waitForVisibility = async (delays) => {
     let polls = 0;
     let waitedMs = 0;
-    for (const delay of [0, ...delays]) {
+    for (const [index, delay] of [0, ...delays].entries()) {
       if (delay > 0) {
         await sleep(delay);
         waitedMs += delay;
@@ -473,8 +475,17 @@ export async function publishRelease({
       const visible = viewPublishedVersion({ name, version, cwd, env });
       if (visible !== null) {
         verify(visible);
+        log(
+          `[release] ${name}@${version} visible and verified after ${polls} polls (${Math.round(waitedMs / 1000)}s)`,
+        );
         return { verified: true, polls, waitedMs };
       }
+      const next = delays[index];
+      log(
+        next === undefined
+          ? `[release] ${name}@${version} still not visible after ${polls} polls (${Math.round(waitedMs / 1000)}s); last poll of the wait`
+          : `[release] ${name}@${version} not visible yet (poll ${polls}, ${Math.round(waitedMs / 1000)}s); next poll in ${Math.round(next / 1000)}s`,
+      );
     }
     return { verified: false, polls, waitedMs };
   };
@@ -494,7 +505,7 @@ export async function publishRelease({
       }),
     );
   }
-  runSync(
+  const result = runSync(
     "npm",
     [
       "publish",
@@ -507,6 +518,17 @@ export async function publishRelease({
       NPM_REGISTRY,
     ],
     { cwd, env },
+  );
+  // npm prints the transparency log URL for a provenance publish; it is the
+  // registry-side record of what was accepted, so it survives in the log even
+  // when the packument stays stale.
+  const transparency = /https:\/\/search\.sigstore\.dev\/\?logIndex=\d+/.exec(
+    result.stdout,
+  );
+  log(
+    transparency === null
+      ? `[release] ${name}@${version} accepted by the registry`
+      : `[release] ${name}@${version} accepted by the registry (${transparency[0]})`,
   );
   return await waitForVisibility(
     visibilityDelays({ waitBudgetMs, initialDelayMs, maxDelayMs }),
@@ -713,6 +735,7 @@ export async function release(options = {}) {
       tarballPath,
       cwd,
       env,
+      log,
       ...options.publishWait,
     });
     log(

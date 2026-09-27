@@ -396,6 +396,7 @@ test("publishRelease: a delayed manifest verifies within the wait budget", async
   try {
     // The registry accepts the publish but serves the manifest late.
     seedPublishState(ctx, "1.2.2", { hiddenViews: 3 });
+    const lines = [];
     const result = await publishRelease({
       version: "1.2.2",
       name: "fixture-consumer",
@@ -407,11 +408,14 @@ test("publishRelease: a delayed manifest verifies within the wait budget", async
       waitBudgetMs: 100,
       initialDelayMs: 1,
       maxDelayMs: 2,
+      log: (line) => lines.push(line),
     });
     assert.equal(result.verified, true);
     assert.equal(result.polls, 4, "three hidden views, then the manifest");
     assert.equal(result.waitedMs, 5);
     assert.equal(assertSinglePublish(ctx.npmShim.callsFile), 1);
+    // Three missed polls, then the verified outcome with elapsed time.
+    assert.match(lines.at(-1), /visible and verified after 4 polls \(0s\)$/);
   } finally {
     ctx.fixture.cleanup();
   }
@@ -421,6 +425,7 @@ test("publishRelease: an accepted publish that never appears is unverified, not 
   const ctx = releaseFixture();
   try {
     seedPublishState(ctx, "1.2.2", { hiddenViews: 1000 });
+    const lines = [];
     const result = await publishRelease({
       version: "1.2.2",
       name: "fixture-consumer",
@@ -432,11 +437,29 @@ test("publishRelease: an accepted publish that never appears is unverified, not 
       waitBudgetMs: 10,
       initialDelayMs: 1,
       maxDelayMs: 1,
+      log: (line) => lines.push(line),
     });
     assert.equal(result.verified, false);
     assert.equal(result.polls, 11, "one poll now, one after each of 10 sleeps");
     assert.equal(result.waitedMs, 10);
     assert.equal(assertSinglePublish(ctx.npmShim.callsFile), 1);
+    // The accepted publish names npm's transparency log URL, every miss names
+    // its next delay, and the final miss says it was the last.
+    const out = lines.join("\n");
+    assert.match(
+      out,
+      /\[release\] fixture-consumer@1\.2\.2 accepted by the registry \(https:\/\/search\.sigstore\.dev\/\?logIndex=\d+\)/,
+    );
+    assert.match(out, /not visible yet \(poll 1, 0s\); next poll in \d+s/);
+    assert.match(
+      out,
+      /still not visible after 11 polls \(0s\); last poll of the wait/,
+    );
+    assert.equal(
+      lines.filter((line) => line.includes("not visible")).length,
+      11,
+      "one line per missed poll",
+    );
   } finally {
     ctx.fixture.cleanup();
   }
@@ -767,6 +790,16 @@ test(
       });
       assert.equal(code, 1, problems.join("\n"));
       const out = problems.join("\n");
+      // The publish and the wait are readable in the job log, forwarded
+      // from release() into publishRelease().
+      assert.match(
+        out,
+        /\[release\] fixture-consumer@1\.2\.2 accepted by the registry \(https:\/\/search\.sigstore\.dev\/\?logIndex=\d+\)/,
+      );
+      assert.match(
+        out,
+        /still not visible after 11 polls .*last poll of the wait/,
+      );
       assert.match(
         out,
         /was accepted by the registry but did not become visible within the visibility wait \(11 polls, 0s; boundaries 4-6 completed, published identity unverified\)/,

@@ -8,7 +8,7 @@
       Verify: `node --test test/release.test.mjs`.
 - [x] T3 Make an unverified accepted publish run Boundary 6, then fail with
       the rerun-to-verify message. Verify: `node --test test/release.test.mjs`.
-- [ ] T4 Add the plan's publish and wait logging through a `log` sink
+- [x] T4 Add the plan's publish and wait logging through a `log` sink
       forwarded from `release()`. Verify: `node --test test/release.test.mjs`.
 - [ ] T5 Converge a publish conflict through the same wait and verify; other
       publish failures unchanged. Verify: `node --test test/release.test.mjs`.
