@@ -12,7 +12,7 @@
       forwarded from `release()`. Verify: `node --test test/release.test.mjs`.
 - [x] T5 Converge a publish conflict through the same wait and verify; other
       publish failures unchanged. Verify: `node --test test/release.test.mjs`.
-- [ ] T6 Document the wait and rerun-to-verify outcome in `README.md` and
+- [x] T6 Document the wait and rerun-to-verify outcome in `README.md` and
       `RELEASE.md`, with a `CHANGELOG.md` `## [Unreleased]` entry.
       Verify: `npm run format:check`.
 - [ ] T7 Run the final gate from the plan's Verification section.
