@@ -92,8 +92,8 @@ maxDelayMs })` with the plan's arithmetic (doubling, capped at
       `## [Unreleased]`.
 
 - [ ] T7 Full verification gate. Run `npm run release:verify` and
-      `planlet validate release-visibility-recovery`. Scope invariants,
-      each checked mechanically:
+      `planlet validate release-visibility-recovery`. Scope invariants:
+      mechanical checks first,
       `git diff --exit-code origin/main -- .github/workflows` (no workflow
       change);
       `diff <(git show origin/main:src/release.mjs | sed -n '/^export function publishedIdentityProblems/,/^}/p') <(sed -n '/^export function publishedIdentityProblems/,/^}/p' src/release.mjs)`
@@ -105,7 +105,7 @@ maxDelayMs })` with the plan's arithmetic (doubling, capped at
       `NPM_RELEASE_FLOW_GPG_FINGERPRINT`, `TAG_EXISTS`,
       `NPM_RELEASE_FLOW_APP_TOKEN`, `PACKAGE_TARBALL`), by any access form
       (member, optional chaining, bracket, destructuring), that every new
-      use of the `env` object only forwards it to `runSync`,
+      use of the `env` object only forwards it to `runSync`, `gh`,
       `viewPublishedVersion()`, or `newerStableExists()` exactly as the
       existing code does, and that no changed file under `src/lib/` adds
       an environment read. `git diff origin/main --stat` for the scope
