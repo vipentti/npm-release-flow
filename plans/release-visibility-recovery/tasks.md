@@ -15,4 +15,17 @@
 - [x] T6 Document the wait and rerun-to-verify outcome in `README.md` and
       `RELEASE.md`, with a `CHANGELOG.md` `## [Unreleased]` entry.
       Verify: `npm run format:check`.
-- [ ] T7 Run the final gate from the plan's Verification section.
+- [x] T7 Run the final gate from the plan's Verification section.
+
+## Verification Evidence
+
+- 2026-09-27, this sandbox: `npm run release:verify` fails its `npm test`
+  step with 7 failures in `test/verify.test.mjs` and `test/e2e.test.mjs`
+  (concurrent `npm ci` / `npm pack` cache contention; the same 7 failures
+  reproduce on `698505e` with this planlet's changes stashed, and the whole
+  suite passes with `node --test --test-concurrency=1`). Lint, format:check,
+  typecheck, knip, `planlet validate`, the empty
+  `git diff origin/main -- .github/workflows`, the byte-identical
+  `publishedIdentityProblems()` body, and the seven-key environment audit of
+  `src/release.mjs` all passed. The authoritative green run is CI on the
+  implementation PR.
