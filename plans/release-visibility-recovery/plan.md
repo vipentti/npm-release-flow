@@ -73,9 +73,11 @@ kit's own caller) or any other consumer change.
   write plus five minute edge cache); the doubling-to-30 s shape verifies
   fast registries in seconds without hundreds of polls.
 - `publishRelease()` takes optional `waitBudgetMs`, `initialDelayMs`,
-  `maxDelayMs`, and `log` (default `consoleLog`); `release()` forwards its
-  `log` and an optional `ReleaseOptions.publishWait`. The workflow never
-  sets them; no new environment variable.
+  `maxDelayMs` (defaults above), and `log` (default `consoleLog`).
+  `ReleaseOptions` gains
+  `publishWait?: { waitBudgetMs?: number, initialDelayMs?: number, maxDelayMs?: number }`;
+  `release()` calls `publishRelease({ ..., log, ...options.publishWait })`.
+  The workflow never sets it; no new environment variable.
 
 ### Outcomes
 
@@ -149,6 +151,10 @@ devDependency, out of scope here.
   fatal before Boundary 6 when it never appears; other publish failures fail
   as today.
 - The idempotent rerun path is unchanged.
+- On every path, recorded npm calls show at most one `publish` and no
+  `publish` after any `view` returned a manifest: already-visible rerun
+  (zero), delayed-visible, timeout, conflict-match, conflict-mismatch, and
+  conflict-timeout (one each).
 - Logs carry the accepted publish (with transparency log URL), each miss,
   and the verify outcome.
 - The workflow, `publishedIdentityProblems()`, and the set of environment
@@ -164,8 +170,10 @@ devDependency, out of scope here.
   manifest; `publishFailure` (`{ status, stderr }`) makes `publish` fail
   after arming; successful `publish` prints a transparency log URL.
   Existing state files behave as today.
-- `publishRelease()` and `release()` tests with millisecond `publishWait`
-  cover each Outcome and each acceptance criterion; `release()`-level cases
+- `publishRelease()` and `release()` tests with small millisecond values
+  for the three `publishWait` fields cover each Outcome and each acceptance
+  criterion, and every one asserts the recorded `publish` count and that no
+  `publish` follows a manifest-returning `view` in the shim call log; `release()`-level cases
   use the gpg fixture with the happy path's skip rule, and the gh shim's
   `releases` state for the edit case.
 - Final gate: `npm run release:verify`, `planlet validate release-visibility-recovery`, an empty
