@@ -521,9 +521,10 @@ export async function publishRelease({
   );
   // npm prints the transparency log URL for a provenance publish; it is the
   // registry-side record of what was accepted, so it survives in the log even
-  // when the packument stays stale.
+  // when the packument stays stale. npm's display writes every notice to
+  // stderr, so both captured streams are scanned.
   const transparency = /https:\/\/search\.sigstore\.dev\/\?logIndex=\d+/.exec(
-    result.stdout,
+    `${result.stdout}\n${result.stderr}`,
   );
   log(
     transparency === null

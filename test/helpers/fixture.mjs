@@ -708,7 +708,10 @@ if (argv[0] === "publish") {
     console.error(failure.stderr ?? "npm-fixture: publish failed");
     process.exit(failure.status ?? 1);
   }
-  console.log(
+  console.log("+ fixture-consumer@1.2.2");
+  // npm's display writes every log.notice to stderr, so the shim does too:
+  // a scan of stdout only would pass here and miss the URL in a real publish.
+  console.error(
     "npm notice Publish provenance attestation: https://search.sigstore.dev/?logIndex=4242",
   );
   process.exit(0);
