@@ -94,7 +94,8 @@ before Boundary 6.
 
 What changes:
 
-- `src/release.mjs`: `publishRelease()` visibility wait, its return value,
+- `src/release.mjs`: new pure `visibilityDelays()` helper;
+  `publishRelease()` visibility wait, its return value,
   the publish-conflict branch, publish observability; `release()`
   ordering around Boundary 6 and the final unverified failure.
 - `test/helpers/fixture.mjs`: the npm shim gains delayed visibility and a
@@ -139,12 +140,21 @@ What changes:
   pinned) as the poll. It is the same read and the same identity fields the
   idempotent rerun path uses, so a successful wait and a successful rerun
   prove the same thing.
-- Delay schedule: first poll immediately after publish, then sleep
-  2 s, 4 s, 8 s, 16 s, then 30 s per miss (doubling, capped at 30 s), until
-  the summed sleep reaches the 15 minute budget (900 000 ms); one final
-  poll follows the last sleep. That is 34 polls at most. The budget is
-  counted as summed scheduled sleep, not wall clock, so it is
-  deterministic in tests; real `npm view` time adds on top.
+- Delay schedule: a pure exported helper
+  `visibilityDelays({ waitBudgetMs, initialDelayMs, maxDelayMs })` returns
+  the sleep list. Arithmetic: `delay_k = min(initialDelayMs * 2^k,
+maxDelayMs, waitBudgetMs - sum(delay_0..delay_k-1))`, appended while the
+  remaining budget is above zero; the last delay is clamped to the
+  remaining budget, never skipped and never overshooting, so the list
+  always sums to exactly `waitBudgetMs`. Defaults give 2000, 4000, 8000,
+  16000, then 29 x 30000 (33 sleeps, 900 000 ms). Example: budget 10,
+  initial 1, max 4 gives 1, 2, 4, 3.
+- Polls: one poll immediately after publish, then one poll after each
+  sleep, so polls = sleeps + 1 (34 by default). The budget is summed
+  scheduled sleep, not wall clock; real `npm view` time adds on top.
+  The wait loop iterates `visibilityDelays(...)`, so the default schedule
+  is proved by a pure unit test of the helper, with no fake timers and no
+  15 minute test.
 - Why 15 minutes: the observed worst case is the registry write about two
   minutes after `npm publish` returned plus up to five minutes of edge
   cache, about seven minutes. Fifteen minutes is roughly twice that.
@@ -169,7 +179,8 @@ What changes:
   Still fatal, still before Boundary 6.
 - Never visible within the budget: return `{ verified: false, ... }`.
   `release()` logs that verification is pending, runs Boundary 6
-  (`ensureGithubRelease()`, `--verify-tag` against the already verified
+  (the unchanged `ensureGithubRelease()`: create with `--verify-tag`
+  against the already verified tag, or edit an existing release as today
   tag), then throws a `CliError`:
 
   ```text
@@ -218,8 +229,10 @@ fatal exactly as today.
 - After a successful publish, log `[release] npm accepted <name>@<version>`
   plus the transparency log URL when npm printed one (matched as
   `https://search.sigstore.dev/?logIndex=<n>` in the captured output).
-- One line per missed poll:
+- One line per missed poll that is followed by a sleep:
   `[release] <name>@<version> not visible yet (poll <n>, <s> s waited, next in <d> s)`.
+  The final missed poll has no next sleep and logs
+  `[release] <name>@<version> not visible after <n> polls, <s> s waited`.
 - On success after misses: `[release] <name>@<version> visible after <s> s; identity verified`.
 - On a publish conflict: log that the registry refused a second publish and
   the wait starts.
@@ -271,9 +284,11 @@ pin and devDependency advance in ordinary upgrade PRs, out of scope here.
 
 - An accepted publish whose version becomes visible anywhere inside the
   15 minute budget verifies identity and reaches Boundary 6; exit 0.
-- An accepted publish whose version never becomes visible still creates or
-  edits the GitHub Release with `--verify-tag`, then exits 1 with the
-  unverified message; `npm publish` ran exactly once.
+- An accepted publish whose version never becomes visible still runs the
+  existing, unchanged `ensureGithubRelease()` (an absent release is
+  created with `--verify-tag`; an existing release is edited exactly as
+  today), then exits 1 with the unverified message; `npm publish` ran
+  exactly once.
 - A visible mismatch (integrity, repository, or gitHead) after publish
   fails with the existing "never publish a second tarball" message and no
   GitHub Release call.
@@ -296,37 +311,53 @@ pin and devDependency advance in ordinary upgrade PRs, out of scope here.
   format:check, typecheck, knip, test).
 - `planlet validate release-visibility-recovery` after any plan or task
   edit.
+- Scope invariants (T7): empty `git diff origin/main -- .github/workflows`;
+  the `publishedIdentityProblems()` function body identical to
+  `origin/main`; no added line in `src/` reads an environment variable.
 - External gate: CI on the implementation PR. The real registry wait is
   only exercised by the next consumer release on an advanced pin.
 
 ## Test plan
 
-All cases use the npm PATH shim with millisecond-scale `publishWait`
-values; nothing touches the network.
+All wait cases use the npm PATH shim with millisecond-scale
+`publishWait` values; nothing touches the network.
 
-- Shim: `hiddenViews` (number of post-publish `view` calls for the
-  published key that still answer E404) and `publishFailure`
-  (`{ status, stderr }` returned by `publish` instead of success). Existing
-  state files keep working (both default off).
-- Schedule: default parameters yield 34 polls and 900 000 ms of summed
-  sleep with delays 2000, 4000, 8000, 16000, then 30000; small injected
-  values keep the doubling-and-cap shape.
+- Shim state (one contract for every case). `publishManifest` is the
+  manifest the registry will serve for `publishName@publishVersion`; it
+  is never served before a `publish` invocation, so the initial
+  pre-publish `view` always answers E404 and publish is always attempted.
+  Any `publish` invocation, successful or failing, arms it. After arming,
+  the next `hiddenViews` (default 0) `view` calls for that key answer
+  E404, then every later call returns `publishManifest`. `publishFailure`
+  (`{ status, stderr }`, default absent) makes `publish` print `stderr` and
+  exit `status` after arming. With `publishManifest` absent nothing is
+  ever served. Existing state files (no `hiddenViews`, no
+  `publishFailure`) behave exactly as today.
+- Schedule: `visibilityDelays()` with defaults returns 2000, 4000, 8000,
+  16000, then 29 x 30000 (33 entries, sum 900 000, so 34 polls); budget
+  10 / initial 1 / max 4 returns 1, 2, 4, 3 (clamped final delay).
 - Retry: `hiddenViews: 5` resolves `{ verified: true }` after 6
   post-publish views, one publish, and logs five "not visible yet" lines.
 - Non-fatal visibility: `hiddenViews` above the poll count returns
   `{ verified: false }` without throwing; at the `release()` level (gpg
   fixture, same skip rule as the happy path) the gh shim records
   `release create ... --verify-tag`, the exit code is 1, and the log
-  contains the unverified message.
+  contains the unverified message. A second `release()`-level case seeds
+  an existing GitHub Release in the gh shim (`setGhRepoState(fixture,
+{ releases: { "v1.2.2": true } })`) and asserts `release edit` is
+  recorded (no `create`) before the exit 1.
 - Still-fatal identity: after a delayed visibility, a published manifest
   with a wrong `dist.integrity`, `repository.url`, or `gitHead` throws the
   "never publish a second tarball" failure; at the `release()` level no
   gh `release create` or `release edit` call is recorded.
-- Publish conflict: `publishFailure` with the registry's conflict text plus
-  a matching manifest verifies with exactly one publish call; with a
-  mismatching manifest fails hard; with no manifest fails with no GitHub
-  Release call. A `publishFailure` with other text (for example E401)
-  fails as today.
+- Publish conflict: `publishFailure` `{ status: 1, stderr: "npm error
+403 ... You cannot publish over the previously published versions: 1.2.2." }`
+  with (a) a matching `publishManifest` and `hiddenViews: 2` verifies with
+  exactly one publish call; (b) a `publishManifest` with a wrong
+  `dist.integrity` fails hard with the existing message; (c) no
+  `publishManifest` fails fatally, and at the `release()` level no gh
+  `release create` or `release edit` call is recorded. A `publishFailure`
+  with other text (for example `npm error code E401`) fails as today.
 - Observability: the transparency log URL printed by the shim's `publish`
   appears in the log.
 - Existing `publishRelease` and `release` tests keep passing unmodified
