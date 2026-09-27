@@ -15,7 +15,7 @@ import {
   pollGithubSignatureVerification,
   visibilityDelays,
 } from "../src/release.mjs";
-import { CliError } from "../src/lib/errors.mjs";
+import { CliError, CommandError } from "../src/lib/errors.mjs";
 import { git, remoteRefSha } from "../src/lib/repo-state.mjs";
 import { integrityOfFile } from "../src/lib/pack-contract.mjs";
 import {
@@ -843,6 +843,186 @@ test(
       assert.equal(assertSinglePublish(ctx.npmShim.callsFile), 1);
     } finally {
       ctx.fixture.cleanup();
+    }
+  },
+);
+
+test("publishRelease: a publish conflict converges to the verified manifest", async () => {
+  const ctx = releaseFixture();
+  try {
+    // A rerun inside another run's visibility window: the packument still
+    // says absent, the registry refuses the second tarball.
+    seedPublishState(ctx, "1.2.2", {
+      publishFailure: {
+        status: 1,
+        stderr:
+          "npm error code EPUBLISHCONFLICT\nnpm error cannot publish over the previously published versions: 1.2.2",
+      },
+    });
+    const lines = [];
+    const result = await publishRelease({
+      version: "1.2.2",
+      name: "fixture-consumer",
+      repositoryUrl: "git+https://github.com/example/fixture-consumer.git",
+      gitHead: ctx.head,
+      tarballPath: ctx.env.PACKAGE_TARBALL,
+      cwd: ctx.fixture.consumer,
+      env: ctx.env,
+      waitBudgetMs: 100,
+      initialDelayMs: 1,
+      maxDelayMs: 2,
+      log: (line) => lines.push(line),
+    });
+    assert.equal(result.verified, true);
+    assert.match(
+      lines.join("\n"),
+      /publish refused: already published; verifying the published manifest instead/,
+    );
+    assert.equal(assertSinglePublish(ctx.npmShim.callsFile), 1);
+  } finally {
+    ctx.fixture.cleanup();
+  }
+});
+
+test("publishRelease: a publish conflict that never becomes visible is fatal", async () => {
+  const ctx = releaseFixture();
+  try {
+    seedPublishState(ctx, "1.2.2", {
+      hiddenViews: 1000,
+      publishFailure: {
+        status: 1,
+        stderr:
+          "npm error cannot publish over the previously published versions: 1.2.2",
+      },
+    });
+    const err = await expectCliError(() =>
+      publishRelease({
+        version: "1.2.2",
+        name: "fixture-consumer",
+        repositoryUrl: "git+https://github.com/example/fixture-consumer.git",
+        gitHead: ctx.head,
+        tarballPath: ctx.env.PACKAGE_TARBALL,
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        waitBudgetMs: 10,
+        initialDelayMs: 1,
+        maxDelayMs: 1,
+        log: () => {},
+      }),
+    );
+    assert.match(
+      err.message,
+      /Found: fixture-consumer@1\.2\.2 is already published on the registry but did not become visible within the visibility wait \(11 polls, 0s\); this run published nothing\./,
+    );
+    assert.equal(assertSinglePublish(ctx.npmShim.callsFile), 1);
+  } finally {
+    ctx.fixture.cleanup();
+  }
+});
+
+test("publishRelease: any other publish failure stays fatal as today", async () => {
+  const ctx = releaseFixture();
+  try {
+    seedPublishState(ctx, "1.2.2", {
+      publishFailure: {
+        status: 1,
+        stderr: "npm error code E402\nnpm error Payment required",
+      },
+    });
+    /** @type {unknown} */
+    let err;
+    try {
+      await publishRelease({
+        version: "1.2.2",
+        name: "fixture-consumer",
+        repositoryUrl: "git+https://github.com/example/fixture-consumer.git",
+        gitHead: ctx.head,
+        tarballPath: ctx.env.PACKAGE_TARBALL,
+        cwd: ctx.fixture.consumer,
+        env: ctx.env,
+        waitBudgetMs: 10,
+        initialDelayMs: 1,
+        maxDelayMs: 1,
+        log: () => {},
+      });
+    } catch (caught) {
+      err = caught;
+    }
+    assert.ok(
+      err instanceof CommandError,
+      `expected the raw CommandError, got ${err?.constructor?.name ?? err}`,
+    );
+    assert.ok(
+      err instanceof CommandError && err.stderr.includes("Payment required"),
+      "the raw npm failure detail is preserved",
+    );
+    // The wait never ran: a refused publish is not a pending one.
+    assert.equal(
+      npmCalls(ctx.npmShim.callsFile).filter(
+        (call) => call[0] === "view" && call[2] !== "versions",
+      ).length,
+      1,
+      "only the pre-publish version view ran",
+    );
+  } finally {
+    ctx.fixture.cleanup();
+  }
+});
+
+test(
+  "release: a publish conflict that mismatches or stays invisible never reaches Boundary 6",
+  { skip: !hasGpg && "gpg is not available or ignores GNUPGHOME" },
+  async () => {
+    for (const shape of [
+      { label: "mismatch", integrity: "sha512-AAAA" },
+      { label: "never visible", hiddenViews: 1000 },
+    ]) {
+      const ctx = releaseFixture();
+      try {
+        seedPublishState(ctx, "1.2.2", {
+          hiddenViews: shape.hiddenViews,
+          publishFailure: {
+            status: 1,
+            stderr:
+              "npm error cannot publish over the previously published versions: 1.2.2",
+          },
+        });
+        if (shape.integrity !== undefined) {
+          const state = JSON.parse(readFileSync(ctx.npmShim.stateFile, "utf8"));
+          state.publishManifest.dist = { integrity: shape.integrity };
+          writeFileSync(
+            ctx.npmShim.stateFile,
+            JSON.stringify(state, null, 2),
+            "utf8",
+          );
+        }
+        setGhRepoState(ctx.fixture, { releases: {} });
+        const problems = [];
+        const code = await release({
+          cwd: ctx.fixture.consumer,
+          env: signingEnv(ctx),
+          log: (line) => problems.push(line),
+          publishWait: { waitBudgetMs: 10, initialDelayMs: 1, maxDelayMs: 1 },
+        });
+        assert.equal(code, 1, `${shape.label}: ${problems.join("\n")}`);
+        const out = problems.join("\n");
+        assert.match(
+          out,
+          shape.integrity === undefined
+            ? /this run published nothing/
+            : /never publish a second tarball over it/,
+        );
+        assert.equal(
+          readGhCalls(ctx.fixture).filter(
+            (call) => call[1] === "create" || call[1] === "edit",
+          ).length,
+          0,
+          `${shape.label}: no GitHub Release call`,
+        );
+        assert.equal(assertSinglePublish(ctx.npmShim.callsFile), 1);
+      } finally {
+        ctx.fixture.cleanup();
+      }
     }
   },
 );

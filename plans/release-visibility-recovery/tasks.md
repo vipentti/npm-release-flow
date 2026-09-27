@@ -10,7 +10,7 @@
       the rerun-to-verify message. Verify: `node --test test/release.test.mjs`.
 - [x] T4 Add the plan's publish and wait logging through a `log` sink
       forwarded from `release()`. Verify: `node --test test/release.test.mjs`.
-- [ ] T5 Converge a publish conflict through the same wait and verify; other
+- [x] T5 Converge a publish conflict through the same wait and verify; other
       publish failures unchanged. Verify: `node --test test/release.test.mjs`.
 - [ ] T6 Document the wait and rerun-to-verify outcome in `README.md` and
       `RELEASE.md`, with a `CHANGELOG.md` `## [Unreleased]` entry.

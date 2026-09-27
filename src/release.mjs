@@ -37,6 +37,12 @@ import { verifyTagObject } from "./lib/tag-verify.mjs";
 import { runAsScript } from "./lib/run-script.mjs";
 
 const NPM_REGISTRY = "https://registry.npmjs.org";
+// The registry's wording when the version is already published. A rerun
+// inside another run's visibility window sees the version as absent and
+// lands here; if the wording changes, this stops matching and every publish
+// failure stays fatal, as before.
+const PUBLISH_CONFLICT =
+  /cannot publish over the previously published versions/;
 const shaPattern = /^[0-9a-f]{40}$/;
 const fingerprintPattern = /^[0-9a-fA-F]{40}$/;
 
@@ -412,7 +418,9 @@ export function visibilityDelays({ waitBudgetMs, initialDelayMs, maxDelayMs }) {
  * A publish the registry accepted but never made visible is not this run's
  * failure to repair: it returns `{ verified: false }` so the caller still
  * completes Boundary 6 and fails with a rerun-to-verify correction, instead of
- * publishing a second tarball.
+ * publishing a second tarball. A publish refused as a conflict is the mirror
+ * image: this run published nothing, so an already-published version that
+ * never becomes visible is fatal here, before Boundary 6.
  *
  * @param {{ version: string, name: string, repositoryUrl: string | null, gitHead: string, tarballPath: string, cwd: string, env: NodeJS.ProcessEnv, waitBudgetMs?: number, initialDelayMs?: number, maxDelayMs?: number, log?: (line: string) => void }} ctx
  * @returns {Promise<{ verified: boolean, polls: number, waitedMs: number }>}
@@ -505,35 +513,62 @@ export async function publishRelease({
       }),
     );
   }
-  const result = runSync(
-    "npm",
-    [
-      "publish",
-      tarballPath,
-      "--ignore-scripts",
-      "--access",
-      "public",
-      "--provenance",
-      "--registry",
-      NPM_REGISTRY,
-    ],
-    { cwd, env },
-  );
-  // npm prints the transparency log URL for a provenance publish; it is the
-  // registry-side record of what was accepted, so it survives in the log even
-  // when the packument stays stale. npm's display writes every notice to
-  // stderr, so both captured streams are scanned.
-  const transparency = /https:\/\/search\.sigstore\.dev\/\?logIndex=\d+/.exec(
-    `${result.stdout}\n${result.stderr}`,
-  );
-  log(
-    transparency === null
-      ? `[release] ${name}@${version} accepted by the registry`
-      : `[release] ${name}@${version} accepted by the registry (${transparency[0]})`,
-  );
-  return await waitForVisibility(
+  let accepted = true;
+  try {
+    const result = runSync(
+      "npm",
+      [
+        "publish",
+        tarballPath,
+        "--ignore-scripts",
+        "--access",
+        "public",
+        "--provenance",
+        "--registry",
+        NPM_REGISTRY,
+      ],
+      { cwd, env },
+    );
+    // npm prints the transparency log URL for a provenance publish; it is the
+    // registry-side record of what was accepted, so it survives in the log
+    // even when the packument stays stale. npm's display writes every notice
+    // to stderr, so both captured streams are scanned.
+    const transparency = /https:\/\/search\.sigstore\.dev\/\?logIndex=\d+/.exec(
+      `${result.stdout}\n${result.stderr}`,
+    );
+    log(
+      transparency === null
+        ? `[release] ${name}@${version} accepted by the registry`
+        : `[release] ${name}@${version} accepted by the registry (${transparency[0]})`,
+    );
+  } catch (err) {
+    if (
+      !(err instanceof CommandError) ||
+      !PUBLISH_CONFLICT.test(commandFailureDetail(err))
+    ) {
+      throw err;
+    }
+    // A rerun inside another run's visibility window: the packument said
+    // absent, the registry says otherwise. The wait below decides whether
+    // the published manifest is there to verify.
+    accepted = false;
+    log(
+      `[release] ${name}@${version} publish refused: already published; verifying the published manifest instead`,
+    );
+  }
+  const outcome = await waitForVisibility(
     visibilityDelays({ waitBudgetMs, initialDelayMs, maxDelayMs }),
   );
+  if (!accepted && !outcome.verified) {
+    throw new CliError(
+      describeFailure({
+        checked: "that the published version is visible in the packument",
+        found: `${name}@${version} is already published on the registry but did not become visible within the visibility wait (${outcome.polls} polls, ${Math.round(outcome.waitedMs / 1000)}s); this run published nothing`,
+        correction: "inspect the registry state manually",
+      }),
+    );
+  }
+  return outcome;
 }
 
 /**
