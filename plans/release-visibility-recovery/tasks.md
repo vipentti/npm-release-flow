@@ -97,9 +97,18 @@ maxDelayMs })` with the plan's arithmetic (doubling, capped at
       `git diff --exit-code origin/main -- .github/workflows` (no workflow
       change);
       `diff <(git show origin/main:src/release.mjs | sed -n '/^export function publishedIdentityProblems/,/^}/p') <(sed -n '/^export function publishedIdentityProblems/,/^}/p' src/release.mjs)`
-      (identity verify unchanged);
-      `git diff origin/main -- src | grep '^+' | grep -E 'env\.[A-Z_]|env\[|process\.env'`
-      returns nothing (no new environment read). `git diff origin/main --stat`
-      for the scope overview only.
-      Verify: every command above exits as stated (0, or no output for the
-      grep).
+      (identity verify unchanged). Environment inputs are proved by
+      review, not regex: read the complete
+      `git diff $(git merge-base origin/main HEAD) -- src` and confirm
+      the only environment keys `src/release.mjs` reads are the
+      pre-existing seven (`VERSION`, `GITHUB_SHA`, `GITHUB_REPOSITORY`,
+      `NPM_RELEASE_FLOW_GPG_FINGERPRINT`, `TAG_EXISTS`,
+      `NPM_RELEASE_FLOW_APP_TOKEN`, `PACKAGE_TARBALL`), by any access form
+      (member, optional chaining, bracket, destructuring), that every new
+      use of the `env` object only forwards it to `runSync`,
+      `viewPublishedVersion()`, or `newerStableExists()` exactly as the
+      existing code does, and that no changed file under `src/lib/` adds
+      an environment read. `git diff origin/main --stat` for the scope
+      overview only.
+      Verify: the commands exit 0 and the environment review finds only
+      the seven pre-existing keys.

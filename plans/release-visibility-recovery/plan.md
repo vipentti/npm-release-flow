@@ -313,7 +313,10 @@ pin and devDependency advance in ordinary upgrade PRs, out of scope here.
   edit.
 - Scope invariants (T7): empty `git diff origin/main -- .github/workflows`;
   the `publishedIdentityProblems()` function body identical to
-  `origin/main`; no added line in `src/` reads an environment variable.
+  `origin/main`; a full review of the implementation's `src/` diff
+  against its merge base confirms `src/release.mjs` still reads only the
+  seven pre-existing environment keys (any access form) and no changed
+  `src/lib/` file adds an environment read.
 - External gate: CI on the implementation PR. The real registry wait is
   only exercised by the next consumer release on an advanced pin.
 
