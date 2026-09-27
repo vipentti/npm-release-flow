@@ -68,6 +68,25 @@ precondition or mutation, `2` a detected-already-present release.
 3. The protected `release` job revalidates, GPG-signs the tag, pushes it as
    the release GitHub App, and publishes to npm (verify-or-idempotent).
 
+## Publish visibility
+
+An accepted npm publish does not become readable in the packument
+immediately: the registry write and its edge cache add minutes, not
+seconds. The release job therefore polls for the published version with
+exponential backoff (2s, 4s, 8s, 16s, then 30s steps) for a budget of
+15 minutes of sleep, so a fast registry verifies in seconds and a slow
+one is not failed for a write delay. The job log carries the accepted
+publish with npm's transparency log URL, one line per missed poll, and
+the verified outcome with elapsed time.
+
+If the publish was accepted but the version never becomes visible, the
+job does not publish again. It completes the GitHub Release (create or
+edit) and then fails, naming the poll count and the waited time, with the
+correction to **re-run the release job**: the rerun sees the published
+version, verifies its identity, and publishes nothing. The same wait
+covers a rerun that the registry refuses as a duplicate; every other
+publish failure is fatal.
+
 ## Reusable workflow
 
 The workflow takes **no inputs**. It reads the package name, version, and

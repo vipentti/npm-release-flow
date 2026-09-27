@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The release job no longer fails an accepted publish on the registry's
+  eventual consistency. Boundary 5 now polls for the published version
+  with exponential backoff (2s, 4s, 8s, 16s, then 30s steps) for 15
+  minutes of sleep instead of 30 polls 2s apart, and the job log records
+  the accepted publish with npm's transparency log URL, one line per
+  missed poll, and the verified outcome.
+- A publish the registry accepted but never made visible now completes
+  the GitHub Release and fails with a re-run-to-verify correction (the
+  rerun verifies the published version and publishes nothing) instead of
+  failing before the GitHub Release. A rerun the registry refuses as a
+  duplicate publish converges through the same wait; every other publish
+  failure stays fatal.
+
 ## [0.1.2] - 2026-08-16
 
 ### Changed

@@ -11,7 +11,10 @@
  * Boundary 4: tag push (create-then-verify-then-push with the App token;
  * tag present -> fetch + verify-only, private material never loaded;
  * divergent -> hard fail), plus the GitHub API signature-verification poll.
- * Boundary 5: publish (verify-or-idempotent, registry pinned to npmjs.com).
+ * Boundary 5: publish (verify-or-idempotent, registry pinned to npmjs.com;
+ * a bounded exponential visibility wait, and an accepted-but-unverified
+ * publish that still completes Boundary 6 and fails for a verify-only
+ * rerun).
  * Boundary 6: GitHub Release (create or edit, idempotent).
  */
 
@@ -34,14 +37,28 @@ import { verifyTagObject } from "./lib/tag-verify.mjs";
 import { runAsScript } from "./lib/run-script.mjs";
 
 const NPM_REGISTRY = "https://registry.npmjs.org";
+// The registry's wording when the version is already published. A rerun
+// inside another run's visibility window sees the version as absent and
+// lands here; if the wording changes, this stops matching and every publish
+// failure stays fatal, as before.
+const PUBLISH_CONFLICT =
+  /cannot publish over the previously published versions/;
 const shaPattern = /^[0-9a-f]{40}$/;
 const fingerprintPattern = /^[0-9a-fA-F]{40}$/;
+
+/**
+ * @typedef {object} PublishWait
+ * @property {number} [waitBudgetMs] Total sleep budget for the visibility wait.
+ * @property {number} [initialDelayMs] First visibility-poll delay.
+ * @property {number} [maxDelayMs] Upper bound on one visibility-poll delay.
+ */
 
 /**
  * @typedef {object} ReleaseOptions
  * @property {string} [cwd] Repository root (the consumer workspace).
  * @property {NodeJS.ProcessEnv} [env] Environment.
  * @property {(line: string) => void} [log] Output sink.
+ * @property {PublishWait} [publishWait] Boundary 5 visibility-wait overrides.
  */
 
 /**
@@ -370,13 +387,43 @@ export function publishedIdentityProblems({
 }
 
 /**
+ * The post-publish visibility wait's sleep schedule: exponential backoff from
+ * `initialDelayMs`, capped at `maxDelayMs`, with the last sleep clamped so the
+ * list sums to exactly `waitBudgetMs`. Pure: the wait loop sleeps the returned
+ * list in order, polling once right away and once after each sleep. The budget
+ * bounds sleep only; `npm view` request time adds on top.
+ *
+ * @param {{ waitBudgetMs: number, initialDelayMs: number, maxDelayMs: number }} options
+ * @returns {number[]} Milliseconds to sleep between packument polls.
+ */
+export function visibilityDelays({ waitBudgetMs, initialDelayMs, maxDelayMs }) {
+  /** @type {number[]} */
+  const delays = [];
+  let remaining = waitBudgetMs;
+  let delay = initialDelayMs;
+  while (remaining > 0) {
+    const step = Math.min(delay, maxDelayMs, remaining);
+    delays.push(step);
+    remaining -= step;
+    delay *= 2;
+  }
+  return delays;
+}
+
+/**
  * Boundary 5: publish the verified tarball, verify-or-idempotent.
  * Present -> identity/integrity verify. Absent -> refuse if a newer stable
  * version exists on the registry, else publish with the registry pinned and
  * provenance, wait for packument visibility, then apply the same verify.
+ * A publish the registry accepted but never made visible is not this run's
+ * failure to repair: it returns `{ verified: false }` so the caller still
+ * completes Boundary 6 and fails with a rerun-to-verify correction, instead of
+ * publishing a second tarball. A publish refused as a conflict is the mirror
+ * image: this run published nothing, so an already-published version that
+ * never becomes visible is fatal here, before Boundary 6.
  *
- * @param {{ version: string, name: string, repositoryUrl: string | null, gitHead: string, tarballPath: string, cwd: string, env: NodeJS.ProcessEnv }} ctx
- * @returns {Promise<void>}
+ * @param {{ version: string, name: string, repositoryUrl: string | null, gitHead: string, tarballPath: string, cwd: string, env: NodeJS.ProcessEnv, waitBudgetMs?: number, initialDelayMs?: number, maxDelayMs?: number, log?: (line: string) => void }} ctx
+ * @returns {Promise<{ verified: boolean, polls: number, waitedMs: number }>}
  */
 export async function publishRelease({
   version,
@@ -386,6 +433,10 @@ export async function publishRelease({
   tarballPath,
   cwd,
   env,
+  waitBudgetMs = 900000,
+  initialDelayMs = 2000,
+  maxDelayMs = 30000,
+  log = consoleLog,
 }) {
   /**
    * @param {Record<string, any>} published
@@ -412,10 +463,45 @@ export async function publishRelease({
     }
   };
 
+  /**
+   * Poll the packument until the published manifest appears (once right away,
+   * then after each scheduled delay) and verify the first one seen. Every
+   * miss names the next delay so a long wait is readable in the job log.
+   *
+   * @param {number[]} delays
+   * @returns {Promise<{ verified: boolean, polls: number, waitedMs: number }>}
+   */
+  const waitForVisibility = async (delays) => {
+    let polls = 0;
+    let waitedMs = 0;
+    for (const [index, delay] of [0, ...delays].entries()) {
+      if (delay > 0) {
+        await sleep(delay);
+        waitedMs += delay;
+      }
+      polls += 1;
+      const visible = viewPublishedVersion({ name, version, cwd, env });
+      if (visible !== null) {
+        verify(visible);
+        log(
+          `[release] ${name}@${version} visible and verified after ${polls} polls (${Math.round(waitedMs / 1000)}s)`,
+        );
+        return { verified: true, polls, waitedMs };
+      }
+      const next = delays[index];
+      log(
+        next === undefined
+          ? `[release] ${name}@${version} still not visible after ${polls} polls (${Math.round(waitedMs / 1000)}s); last poll of the wait`
+          : `[release] ${name}@${version} not visible yet (poll ${polls}, ${Math.round(waitedMs / 1000)}s); next poll in ${Math.round(next / 1000)}s`,
+      );
+    }
+    return { verified: false, polls, waitedMs };
+  };
+
   const existing = viewPublishedVersion({ name, version, cwd, env });
   if (existing !== null) {
     verify(existing);
-    return;
+    return { verified: true, polls: 1, waitedMs: 0 };
   }
   if (newerStableExists({ name, current: version, cwd, env })) {
     throw new CliError(
@@ -427,36 +513,62 @@ export async function publishRelease({
       }),
     );
   }
-  runSync(
-    "npm",
-    [
-      "publish",
-      tarballPath,
-      "--ignore-scripts",
-      "--access",
-      "public",
-      "--provenance",
-      "--registry",
-      NPM_REGISTRY,
-    ],
-    { cwd, env },
-  );
-  // Wait for packument visibility (npm publish is eventually consistent).
-  for (let i = 0; i < 30; i++) {
-    const visible = viewPublishedVersion({ name, version, cwd, env });
-    if (visible !== null) {
-      verify(visible);
-      return;
+  let accepted = true;
+  try {
+    const result = runSync(
+      "npm",
+      [
+        "publish",
+        tarballPath,
+        "--ignore-scripts",
+        "--access",
+        "public",
+        "--provenance",
+        "--registry",
+        NPM_REGISTRY,
+      ],
+      { cwd, env },
+    );
+    // npm prints the transparency log URL for a provenance publish; it is the
+    // registry-side record of what was accepted, so it survives in the log
+    // even when the packument stays stale. npm's display writes every notice
+    // to stderr, so both captured streams are scanned.
+    const transparency = /https:\/\/search\.sigstore\.dev\/\?logIndex=\d+/.exec(
+      `${result.stdout}\n${result.stderr}`,
+    );
+    log(
+      transparency === null
+        ? `[release] ${name}@${version} accepted by the registry`
+        : `[release] ${name}@${version} accepted by the registry (${transparency[0]})`,
+    );
+  } catch (err) {
+    if (
+      !(err instanceof CommandError) ||
+      !PUBLISH_CONFLICT.test(commandFailureDetail(err))
+    ) {
+      throw err;
     }
-    await sleep(2000);
+    // A rerun inside another run's visibility window: the packument said
+    // absent, the registry says otherwise. The wait below decides whether
+    // the published manifest is there to verify.
+    accepted = false;
+    log(
+      `[release] ${name}@${version} publish refused: already published; verifying the published manifest instead`,
+    );
   }
-  throw new CliError(
-    describeFailure({
-      checked: "that the published version is visible in the packument",
-      found: `${name}@${version} did not appear within the visibility wait`,
-      correction: "inspect the registry state manually",
-    }),
+  const outcome = await waitForVisibility(
+    visibilityDelays({ waitBudgetMs, initialDelayMs, maxDelayMs }),
   );
+  if (!accepted && !outcome.verified) {
+    throw new CliError(
+      describeFailure({
+        checked: "that the published version is visible in the packument",
+        found: `${name}@${version} is already published on the registry but did not become visible within the visibility wait (${outcome.polls} polls, ${Math.round(outcome.waitedMs / 1000)}s); this run published nothing`,
+        correction: "inspect the registry state manually",
+      }),
+    );
+  }
+  return outcome;
 }
 
 /**
@@ -651,7 +763,7 @@ export async function release(options = {}) {
         }),
       );
     }
-    await publishRelease({
+    const published = await publishRelease({
       version,
       name: manifest.name,
       repositoryUrl: manifest.repositoryUrl,
@@ -659,8 +771,14 @@ export async function release(options = {}) {
       tarballPath,
       cwd,
       env,
+      log,
+      ...options.publishWait,
     });
-    log(`[release] ${manifest.name}@${version} published (or verified)`);
+    log(
+      published.verified
+        ? `[release] ${manifest.name}@${version} published (or verified)`
+        : `[release] ${manifest.name}@${version} accepted by the registry but not visible yet (${published.polls} polls, ${Math.round(published.waitedMs / 1000)}s)`,
+    );
 
     // --- Boundary 6: GitHub Release ---
 
@@ -678,6 +796,20 @@ export async function release(options = {}) {
     }
     await ensureGithubRelease({ version, notes, cwd, env });
     log(`[release] GitHub Release v${version} ensured`);
+
+    // The accepted publish is still unverified. The GitHub Release now
+    // exists, so the job fails with a verify-only rerun as the correction
+    // rather than pretending a second publish would help.
+    if (!published.verified) {
+      throw new CliError(
+        describeFailure({
+          checked: "that the published version is visible in the packument",
+          found: `${manifest.name}@${version} was accepted by the registry but did not become visible within the visibility wait (${published.polls} polls, ${Math.round(published.waitedMs / 1000)}s; boundaries 4-6 completed, published identity unverified)`,
+          correction:
+            "re-run the release job; it verifies the published version without publishing again",
+        }),
+      );
+    }
     return 0;
   } catch (err) {
     if (err instanceof CliError) {

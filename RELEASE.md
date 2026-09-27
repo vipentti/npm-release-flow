@@ -169,6 +169,23 @@ this order exactly:
    verify-or-idempotent against the registry).
 7. Afterward, advance the caller pin in an ordinary PR (below).
 
+## Publish visibility and the rerun-to-verify failure
+
+The registry is eventually consistent: an accepted `npm publish` can take
+minutes to become readable in the packument, behind a five-minute edge
+cache. The release job polls with exponential backoff (2s, 4s, 8s, 16s,
+then 30s steps) for 15 minutes of sleep before treating the version as
+invisible. Watch the job log for the accepted publish (with npm's
+transparency log URL), one line per missed poll, and the verified
+outcome.
+
+If the publish was accepted and the version never became visible, the job
+still ensures the GitHub Release and then exits 1, asking for a re-run.
+Re-run the failed release job; the rerun verifies the published version
+and publishes nothing, and the flow ends green. Never respond to this
+failure by publishing again: the tarball is already on the registry, and
+a second publish would be refused (or worse, race with the first).
+
 ## After each release (caller pin advance)
 
 The self-release caller pins the workflow to a full 40-character commit SHA,
