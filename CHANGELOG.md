@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-27
+
 ### Fixed
 
 - The release job no longer fails an accepted publish on the registry's
@@ -51,7 +53,8 @@
   protected `release` job never installs consumer dependencies and loads
   secret material only after revalidation.
 
-[Unreleased]: https://github.com/vipentti/npm-release-flow/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/vipentti/npm-release-flow/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/vipentti/npm-release-flow/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/vipentti/npm-release-flow/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/vipentti/npm-release-flow/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/vipentti/npm-release-flow/compare/v0.0.0...v0.1.0
