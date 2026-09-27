@@ -1,6 +1,6 @@
 # Tasks: Release publish visibility recovery
 
-- [ ] T1 Extend the npm shim with the plan's `publishManifest` arming,
+- [x] T1 Extend the npm shim with the plan's `publishManifest` arming,
       `hiddenViews`, `publishFailure`, and transparency log output.
       Verify: `node --test test/release.test.mjs` passes unchanged.
 - [ ] T2 Replace the fixed visibility loop with `visibilityDelays()` backoff

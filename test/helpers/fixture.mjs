@@ -674,8 +674,19 @@ if (argv[0] === "view") {
   const key = argv[1]; // name@version
   const manifest = s.views?.[key];
   if (manifest !== undefined) {
-    console.log(JSON.stringify(manifest));
-    process.exit(0);
+    // Registry eventual consistency: the first hiddenViews views after the
+    // arming publish answer E404, every later one serves the manifest. The
+    // served view is logged with a --served marker so tests can assert that no
+    // publish follows a manifest-returning view.
+    const hidden = s.hiddenViewsRemaining ?? 0;
+    if (hidden > 0) {
+      s.hiddenViewsRemaining = hidden - 1;
+      save(s);
+    } else {
+      console.log(JSON.stringify(manifest));
+      if (callsPath) appendFileSync(callsPath, JSON.stringify([...argv, "--served"]) + "\\n");
+      process.exit(0);
+    }
   }
   console.error("npm-fixture: E404 for " + key);
   process.exit(1);
@@ -684,10 +695,22 @@ if (argv[0] === "publish") {
   const s = state();
   const name = s.publishName;
   const version = s.publishVersion;
+  // Every publish invocation arms the manifest, successful or failing: either
+  // this run's tarball was accepted, or an earlier run's publish is still
+  // inside the registry's visibility window (the publish-conflict case).
   if (name && version && s.publishManifest) {
     s.views = { ...(s.views ?? {}), [name + "@" + version]: s.publishManifest };
-    save(s);
+    s.hiddenViewsRemaining = s.hiddenViews ?? 0;
   }
+  const failure = s.publishFailure;
+  save(s);
+  if (failure) {
+    console.error(failure.stderr ?? "npm-fixture: publish failed");
+    process.exit(failure.status ?? 1);
+  }
+  console.log(
+    "npm notice Publish provenance attestation: https://search.sigstore.dev/?logIndex=4242",
+  );
   process.exit(0);
 }
 console.error("npm-fixture: unhandled invocation: " + argv.join(" "));
