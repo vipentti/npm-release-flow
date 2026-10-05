@@ -1,8 +1,9 @@
-<!-- BEGIN PLANLET AGENTS v:1 hash:0246f0e7 -->
+<!-- BEGIN PLANLET AGENTS v:1 hash:ec33848e -->
 ## Planning with Planlet
 
 This repository uses Planlet for focused implementation plans. A planlet is
 `plans/<slug>/plan.md` + `tasks.md`; Markdown is the source of truth.
+Planlets live in `plans/<slug>/` unless `.planlet.json` sets `plansDir`.
 
 - Propose a planlet before multi-step work; skip it for one-file changes.
 - Use the `planlet` CLI for lifecycle state, including task checkboxes and
